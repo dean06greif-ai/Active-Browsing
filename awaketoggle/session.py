@@ -124,8 +124,9 @@ class SessionWatcher:
                     log.info("System aus dem Energiesparmodus aufgewacht")
                     self._on_resume()
                 return 1
-            if msg == WM_DESTROY:
+            if msg == WM_CLOSE:
                 wtsapi32.WTSUnRegisterSessionNotification(hwnd)
+            elif msg == WM_DESTROY:
                 user32.PostQuitMessage(0)
                 return 0
         except Exception:
