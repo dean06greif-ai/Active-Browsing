@@ -15,8 +15,8 @@ ES_DISPLAY_REQUIRED = 0x00000002
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
 MOUSEEVENTF_MOVE = 0x0001
+MOUSEEVENTF_WHEEL = 0x0800
 KEYEVENTF_KEYUP = 0x0002
-VK_F15 = 0x7E
 MAPVK_VK_TO_VSC = 0
 DESKTOP_READOBJECTS = 0x0001
 UOI_NAME = 2
@@ -86,9 +86,15 @@ kernel32.SetConsoleCtrlHandler.argtypes = [HandlerRoutine, wintypes.BOOL]
 kernel32.SetConsoleCtrlHandler.restype = wintypes.BOOL
 
 
-def _mouse_move(dx: int) -> INPUT:
+def _mouse_move(dx: int, dy: int) -> INPUT:
     inp = INPUT(type=INPUT_MOUSE)
-    inp.mi = MOUSEINPUT(dx, 0, 0, MOUSEEVENTF_MOVE, 0, 0)
+    inp.mi = MOUSEINPUT(dx, dy, 0, MOUSEEVENTF_MOVE, 0, 0)
+    return inp
+
+
+def _wheel(delta: int) -> INPUT:
+    inp = INPUT(type=INPUT_MOUSE)
+    inp.mi = MOUSEINPUT(0, 0, delta & 0xFFFFFFFF, MOUSEEVENTF_WHEEL, 0, 0)
     return inp
 
 
@@ -126,25 +132,53 @@ class Win32Api:
         finally:
             user32.CloseDesktop(h)
 
-    def send_signal(self, kind: str) -> bool:
-        return self._send_f15() if kind == "f15" else self._send_mouse_nudge()
+    def execute(self, plan) -> bool:
+        if plan.kind == "keys":
+            return self._keys(plan.steps)
+        if plan.kind == "scroll":
+            return self._scroll(plan.steps)
+        return self._mouse(plan.steps)
 
-    def _send_mouse_nudge(self) -> bool:
+    @staticmethod
+    def _send(*inputs) -> bool:
+        arr = (INPUT * len(inputs))(*inputs)
+        return user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT)) == len(inputs)
+
+    def _mouse(self, steps) -> bool:
         origin = wintypes.POINT()
         have_pos = user32.GetCursorPos(ctypes.byref(origin))
-        arr = (INPUT * 2)(_mouse_move(1), _mouse_move(-1))
-        sent = user32.SendInput(2, arr, ctypes.sizeof(INPUT))
+        ok = True
+        for dx, dy, pause in steps:
+            ok &= self._send(_mouse_move(dx, dy))
+            if pause:
+                time.sleep(pause)
         if have_pos:
             time.sleep(0.015)
             now = wintypes.POINT()
             if user32.GetCursorPos(ctypes.byref(now)) and (now.x, now.y) != (origin.x, origin.y):
                 user32.SetCursorPos(origin.x, origin.y)
-        return sent == 2
+        return ok
 
-    def _send_f15(self) -> bool:
-        scan = user32.MapVirtualKeyW(VK_F15, MAPVK_VK_TO_VSC)
-        arr = (INPUT * 2)(_key(VK_F15, scan, False), _key(VK_F15, scan, True))
-        return user32.SendInput(2, arr, ctypes.sizeof(INPUT)) == 2
+    def _scroll(self, steps) -> bool:
+        ok = True
+        for delta, pause in steps:
+            if delta:
+                ok &= self._send(_wheel(delta))
+            if pause:
+                time.sleep(pause)
+        return ok
+
+    def _keys(self, steps) -> bool:
+        ok = True
+        for vk, hold, pause in steps:
+            scan = user32.MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)
+            ok &= self._send(_key(vk, scan, False))
+            if hold:
+                time.sleep(hold)
+            ok &= self._send(_key(vk, scan, True))
+            if pause:
+                time.sleep(pause)
+        return ok
 
 
 def acquire_single_instance(name: str):

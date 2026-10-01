@@ -26,8 +26,8 @@ class FakeApi:
     def is_locked(self):
         return self.locked
 
-    def send_signal(self, kind):
-        self.sent.append(kind)
+    def execute(self, plan):
+        self.sent.append(plan.label)
         if self.effective:
             self.last = self.now
         return True
@@ -44,9 +44,9 @@ class Clock:
         return self.t
 
 
-def make(cfg=None):
+def make(cfg=None, rng=None):
     api, clock = FakeApi(), Clock()
-    return api, clock, Engine(api, cfg or Config(), clock=clock, sleep=lambda s: None)
+    return api, clock, Engine(api, cfg or Config(), clock=clock, sleep=lambda s: None, rng=rng)
 
 
 def test_decide_basic_and_wraparound():
@@ -74,7 +74,7 @@ def test_active_pauses_while_user_active_then_sends():
     assert eng.status.text == TEXT_USER
     api.advance(40_000)
     assert eng.step() == 60.0
-    assert api.sent == ["mouse"]
+    assert api.sent == ["Maus"]
     assert eng.status.state == "on" and "letztes Signal" in eng.status.text
 
 
@@ -112,7 +112,7 @@ def test_locked_screen_pauses():
     assert api.sent == [] and eng.status.state == "paused" and eng.status.text == TEXT_LOCKED
     api.locked = False
     eng.step()
-    assert api.sent == ["mouse"]
+    assert api.sent == ["Maus"]
 
 
 def test_session_lock_flag_pauses():
@@ -130,7 +130,7 @@ def test_ineffective_signal_is_reported():
     eng.set_active(True)
     api.advance(60_000)
     eng.step()
-    assert api.sent == ["mouse"] and eng.status.state == "paused" and eng.status.text == TEXT_INEFFECTIVE
+    assert api.sent == ["Maus"] and eng.status.state == "paused" and eng.status.text == TEXT_INEFFECTIVE
 
 
 def test_f15_signal():
@@ -138,7 +138,7 @@ def test_f15_signal():
     eng.set_active(True)
     api.advance(60_000)
     eng.step()
-    assert api.sent == ["f15"]
+    assert api.sent == ["F15"]
 
 
 def test_timer_switches_off():

@@ -12,7 +12,8 @@ def test_creates_defaults(tmp_path):
     cfg, warnings = load(p)
     assert cfg == Config() and warnings == []
     assert json.loads(p.read_text("utf-8")) == {
-        "interval_seconds": 60, "signal": "mouse", "timer_hours": 0, "start_active": False, "verbose_log": False}
+        "interval_seconds": 60, "signal": "mouse", "timer_hours": 0, "start_active": False, "verbose_log": False,
+        "random_variants": ["mouse", "scroll", "keys"], "jitter_percent": 0}
 
 
 def test_roundtrip(tmp_path):

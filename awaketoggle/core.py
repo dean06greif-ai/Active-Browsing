@@ -1,10 +1,12 @@
 import logging
+import random
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from .config import Config
+from .variants import make_plan, next_interval
 
 log = logging.getLogger(__name__)
 
@@ -48,12 +50,14 @@ def decide(now: int, last_input: int, own_input: int | None, interval_ms: int, l
 
 
 class Engine:
-    def __init__(self, api, cfg: Config, on_status=None, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, api, cfg: Config, on_status=None, clock=time.monotonic, sleep=time.sleep, rng=None):
         self._api = api
         self._cfg = cfg
         self.on_status = on_status
         self._clock = clock
         self._sleep = sleep
+        self._rng = rng or random.Random()
+        self._target_s = None
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._thread = None
@@ -93,6 +97,7 @@ class Engine:
             self._active = on
             self._deadline = self._new_deadline() if on else None
             self._off_reason = "" if on else reason
+            self._target_s = None
         log.info("%s%s", "Eingeschaltet" if on else "Ausgeschaltet", f" ({reason})" if reason else "")
         self._wake.set()
 
@@ -103,6 +108,7 @@ class Engine:
         with self._lock:
             timer_changed = cfg.timer_hours != self._cfg.timer_hours
             self._cfg = cfg
+            self._target_s = None
             if self._active and timer_changed:
                 self._deadline = self._new_deadline()
         self._wake.set()
@@ -190,16 +196,19 @@ class Engine:
 
     def _tick(self, cfg: Config, dl) -> float:
         api = self._api
+        if self._target_s is None:
+            self._target_s = next_interval(cfg, self._rng)
+        target = self._target_s
         locked = self._session_locked or api.is_locked()
         last = api.last_input_tick()
-        action, remaining_ms = decide(api.tick(), last, self._own_input, cfg.interval_seconds * 1000, locked)
+        action, remaining_ms = decide(api.tick(), last, self._own_input, int(target * 1000), locked)
 
         if action == LOCKED:
             if self._status.text != TEXT_LOCKED:
                 log.info("Bildschirm gesperrt, sende keine Signale")
             self._own_input = None
             self._publish(Status("paused", TEXT_LOCKED, dl))
-            return min(float(cfg.interval_seconds), LOCK_POLL_S)
+            return min(target, LOCK_POLL_S)
 
         wait_s = max(remaining_ms / 1000, MIN_WAIT_S)
         if action == USER_ACTIVE:
@@ -210,7 +219,8 @@ class Engine:
                 self._publish(Status("on", "An", dl))
             return wait_s
 
-        ok = api.send_signal(cfg.signal)
+        plan = make_plan(cfg, self._rng)
+        ok = api.execute(plan)
         after = last
         if ok:
             for _ in range(CONFIRM_TRIES):
@@ -222,11 +232,13 @@ class Engine:
             self._sleep(CONFIRM_DELAY_S)
             self._own_input = api.last_input_tick()
             stamp = datetime.now().strftime("%H:%M:%S")
-            log.log(logging.INFO if cfg.verbose_log else logging.DEBUG, "Signal gesendet (%s)", cfg.signal)
-            self._publish(Status("on", f"An, letztes Signal {stamp}", dl))
+            log.log(logging.INFO if cfg.verbose_log else logging.DEBUG, "Signal gesendet (%s, %d Schritte)",
+                    plan.label, len(plan.steps))
+            self._publish(Status("on", f"An, letztes Signal {stamp} ({plan.label})", dl))
         else:
             self._own_input = None
             if self._status.text != TEXT_INEFFECTIVE:
-                log.warning("Signal (%s) ohne Wirkung: SendInput=%s, Leerlaufzähler unverändert", cfg.signal, ok)
+                log.warning("Signal (%s) ohne Wirkung: SendInput=%s, Leerlaufzähler unverändert", plan.label, ok)
             self._publish(Status("paused", TEXT_INEFFECTIVE, dl))
-        return float(cfg.interval_seconds)
+        self._target_s = next_interval(cfg, self._rng)
+        return self._target_s

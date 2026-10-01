@@ -25,6 +25,11 @@ nicht anschlägt. Pausiert bei eigener Eingabe (GetLastInputInfo) und bei gesper
   Einzelinstanz, sauberes Beenden, Autostart, GitHub-Actions-Build + Release bei Tag v*, README (DE)
 - Tests: 24/24 grün (Linux). Win32-Code nur statisch geprüft; Prüfung auf Windows per --selftest im CI.
 
+## Iteration 2 (2026-06)
+- Zufallsmodus `signal: random` mit Varianten Mauspfad (zurück zum Start), Scrollen (hin/zurück), Tippen (nur F13–F24)
+- `jitter_percent` 0–50: Abstand zufällig nur kürzer; Tray-Menü: Varianten-Häkchen, „Abstand variieren“
+- Eingabetest-Seite protokolliert jetzt auch Scrollen; 32/32 Tests grün
+
 ## Backlog
 - P0: Phase 4 auf echtem Windows mit Power Browser (Maus vs. F15, RAM, Ruhezustand, Sperre, RDP)
 - P1: Sofortiges Signal vor dem Sperren / Hotkey zum Umschalten

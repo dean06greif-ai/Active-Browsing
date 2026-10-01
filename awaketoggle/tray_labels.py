@@ -12,6 +12,10 @@ def timer_label(hours) -> str:
     return f"Nach {hours} Stunde" if hours == 1 else f"Nach {hours} Stunden"
 
 
+def jitter_label(percent) -> str:
+    return "Nein (immer gleich)" if not percent else f"Zufällig bis zu {percent} % kürzer"
+
+
 def tooltip(status: Status) -> str:
     text = f"{APP_NAME}: {status.text}"
     if status.deadline:

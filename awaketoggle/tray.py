@@ -8,14 +8,17 @@ from pystray import MenuItem as Item
 
 from . import APP_NAME, autostart
 from . import config as config_mod
-from .config import INTERVAL_CHOICES, TIMER_CHOICES
+from .config import INTERVAL_CHOICES, JITTER_CHOICES, TIMER_CHOICES, VARIANTS
 from .core import Status
 from .icons import make_icon
-from .tray_labels import interval_label, timer_label, tooltip
+from .tray_labels import interval_label, jitter_label, timer_label, tooltip
 
 log = logging.getLogger(__name__)
 
-SIGNAL_LABELS = {"mouse": "Maus (1 Pixel hin und zurück)", "f15": "Taste F15"}
+SIGNAL_LABELS = {"mouse": "Maus (1 Pixel hin und zurück)", "f15": "Taste F15", "random": "Zufällig (Varianten wählbar)"}
+VARIANT_MENU_LABELS = {"mouse": "Mausbewegung (kleiner Pfad, zurück zum Start)",
+                       "scroll": "Scrollen (kurz hin und zurück)",
+                       "keys": "Tippen (nur F13–F24, kein Text)"}
 
 
 class TrayApp:
@@ -97,6 +100,19 @@ class TrayApp:
         return Item(label, lambda: self._change(**{key: value}),
                     checked=lambda i: getattr(self._cfg(), key) == value, radio=True)
 
+    def _toggle_variant(self, variant) -> None:
+        current = self._cfg().random_variants
+        if variant in current and len(current) == 1:
+            self._notify("Mindestens eine Variante muss aktiv bleiben.")
+            return
+        new = tuple(v for v in VARIANTS if (v in current) != (v == variant))
+        self._change(random_variants=new)
+
+    def _variant(self, variant) -> Item:
+        return Item(VARIANT_MENU_LABELS[variant], lambda: self._toggle_variant(variant),
+                    checked=lambda i: variant in self._cfg().random_variants,
+                    enabled=lambda i: self._cfg().signal == "random")
+
     def _custom(self, key, choices, label_fn) -> Item:
         return Item(lambda i: f"Eigener Wert: {label_fn(getattr(self._cfg(), key))} (config.json)",
                     lambda: None, checked=lambda i: True, radio=True, enabled=False,
@@ -107,9 +123,12 @@ class TrayApp:
             Item("Aktiv", self._toggle, checked=lambda i: self.engine.active, default=True),
             Item(lambda i: self.engine.status.text, lambda: None, enabled=False),
             Menu.SEPARATOR,
-            Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()])),
+            Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()],
+                                Menu.SEPARATOR, *[self._variant(v) for v in VARIANTS])),
             Item("Abstand", Menu(*[self._radio(interval_label(s), "interval_seconds", s) for s in INTERVAL_CHOICES],
                                  self._custom("interval_seconds", INTERVAL_CHOICES, interval_label))),
+            Item("Abstand variieren", Menu(*[self._radio(jitter_label(j), "jitter_percent", j) for j in JITTER_CHOICES],
+                                           self._custom("jitter_percent", JITTER_CHOICES, jitter_label))),
             Item("Automatisch abschalten", Menu(*[self._radio(timer_label(h), "timer_hours", h) for h in TIMER_CHOICES],
                                                 self._custom("timer_hours", TIMER_CHOICES, timer_label))),
             Menu.SEPARATOR,

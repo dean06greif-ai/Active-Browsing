@@ -8,7 +8,9 @@ from . import APP_NAME
 
 log = logging.getLogger(__name__)
 
-SIGNALS = ("mouse", "f15")
+SIGNALS = ("mouse", "f15", "random")
+VARIANTS = ("mouse", "scroll", "keys")
+JITTER_CHOICES = (0, 10, 25, 50)
 INTERVAL_CHOICES = (30, 60, 120, 300)
 TIMER_CHOICES = (0, 1, 4, 8)
 INTERVAL_MIN, INTERVAL_MAX = 10, 3600
@@ -22,6 +24,8 @@ class Config:
     timer_hours: float = 0
     start_active: bool = False
     verbose_log: bool = False
+    random_variants: tuple = VARIANTS
+    jitter_percent: int = 0
 
 
 def app_dir() -> Path:
@@ -49,7 +53,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
 
     sig = raw.get("signal", d.signal)
     if sig not in SIGNALS:
-        warnings.append(f"signal={sig!r} ungültig (mouse oder f15), nutze {d.signal}")
+        warnings.append(f"signal={sig!r} ungültig (mouse, f15 oder random), nutze {d.signal}")
         sig = d.signal
     values["signal"] = sig
 
@@ -65,6 +69,18 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
             warnings.append(f"{key}={v!r} ungültig (true oder false), nutze {getattr(d, key)}")
             v = getattr(d, key)
         values[key] = v
+
+    rv = raw.get("random_variants", list(d.random_variants))
+    if not isinstance(rv, list) or not rv or any(v not in VARIANTS for v in rv):
+        warnings.append(f"random_variants={rv!r} ungültig (Liste aus {', '.join(VARIANTS)}), nutze alle")
+        rv = d.random_variants
+    values["random_variants"] = tuple(dict.fromkeys(rv))
+
+    jp = raw.get("jitter_percent", d.jitter_percent)
+    if not _is_number(jp) or not 0 <= jp <= 50:
+        warnings.append(f"jitter_percent={jp!r} ungültig (0–50), nutze 0")
+        jp = d.jitter_percent
+    values["jitter_percent"] = int(jp)
 
     unknown = sorted(set(raw) - set(values))
     if unknown:

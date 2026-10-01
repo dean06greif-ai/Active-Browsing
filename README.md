@@ -4,7 +4,8 @@ Kleines Tray-Tool für Windows 10/11: hält den Rechner wach und sendet in feste
 offene Eingabe (Maus 1 Pixel hin und zurück oder Taste F15), damit die Leerlauferkennung des eigenen
 Power Browser nicht anschlägt. Ein- und Ausschalten mit einem Klick auf das Symbol im Infobereich.
 
-**Bewusst nicht enthalten:** zufälliges oder „menschlich wirkendes“ Verhalten.
+Standard ist ein festes, gleichbleibendes Signal. Optional gibt es einen Modus **Zufällig** mit wechselnden,
+harmlosen Varianten (siehe unten).
 
 | Symbol | Bedeutung |
 |---|---|
@@ -30,7 +31,8 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut, 
 - **Linksklick** auf das Symbol: ein/aus.
 - **Rechtsklick** öffnet das Menü:
   - *Aktiv* – ein/aus, darunter der aktuelle Status
-  - *Signal* – Maus (1 Pixel hin und zurück) oder Taste F15
+  - *Signal* – Maus (1 Pixel hin und zurück), Taste F15 oder *Zufällig*; darunter die Zufallsvarianten zum An-/Abhaken
+  - *Abstand variieren* – nein, oder zufällig bis zu 10 / 25 / 50 % kürzer
   - *Abstand* – 30 s, 60 s, 2 min, 5 min (andere Werte über `config.json`)
   - *Automatisch abschalten* – nie, nach 1, 4 oder 8 Stunden (Timer startet beim Einschalten)
   - *Beim Programmstart aktivieren*
@@ -48,22 +50,48 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
   "signal": "mouse",
   "timer_hours": 0,
   "start_active": false,
-  "verbose_log": false
+  "verbose_log": false,
+  "random_variants": ["mouse", "scroll", "keys"],
+  "jitter_percent": 0
 }
 ```
 
 | Schlüssel | Werte | Bedeutung |
 |---|---|---|
 | `interval_seconds` | 10–3600 | Abstand zwischen zwei Signalen |
-| `signal` | `mouse` / `f15` | Art des Signals |
+| `signal` | `mouse` / `f15` / `random` | Art des Signals |
 | `timer_hours` | 0–24 (0 = unbegrenzt) | automatisch abschalten nach … Stunden |
 | `start_active` | `true` / `false` | beim Programmstart sofort einschalten |
 | `verbose_log` | `true` / `false` | jedes gesendete Signal protokollieren (für Tests) |
+| `random_variants` | Liste aus `mouse`, `scroll`, `keys` | Varianten für `signal: random` (mind. eine) |
+| `jitter_percent` | 0–50 | Abstand zufällig um bis zu so viel Prozent **kürzer** (nie länger) |
 
 Nach Änderungen von Hand: Menü → *Konfiguration neu laden*. Ungültige Werte werden durch Standardwerte ersetzt und
 im Protokoll gemeldet; eine unlesbare Datei wird als `config.invalid.json` gesichert.
 
 Protokoll: `%LOCALAPPDATA%\AwakeToggle\awaketoggle.log` (+ eine Sicherung `.log.1`, zusammen höchstens 1 MB).
+
+## Zufallsmodus
+
+Bei `signal: random` wählt jedes Signal zufällig eine der aktivierten Varianten:
+
+| Variante | Ablauf | Nettowirkung |
+|---|---|---|
+| Mausbewegung | 3–7 kleine Schritte (je bis 4 px, 8–40 ms Pause), dann derselbe Weg zurück; Position wird zum Schluss geprüft | Zeiger steht wieder am Ausgangspunkt (max. ca. 28 px Ausschlag) |
+| Scrollen | 1–3 kleine Radschritte (15–60 von 120 je Raste) in eine Richtung, kurze Pause, dieselben zurück | Seite steht wieder an derselben Stelle |
+| Tippen | 1–3 Tastendrücke aus **F13–F24** mit zufälliger Haltedauer und Pause | kein Text, keine Tastenkürzel |
+
+`jitter_percent` macht zusätzlich den Abstand unregelmäßig, aber nur **kürzer** als eingestellt, damit die
+Leerlaufgrenze nie überschritten wird.
+
+Bewusste Grenzen:
+- **Keine echten Buchstaben.** Text würde im gerade fokussierten Feld landen (Adresszeile, Eingabefelder,
+  Backtest-Parameter) oder Tastenkürzel auslösen. Darum nur F13–F24, die auf normalen Tastaturen fehlen.
+- **Scrollen** wirkt auf das Fenster unter dem Mauszeiger (Windows-Standard „inaktive Fenster scrollen“).
+  Steht eine Seite ganz oben/unten, kann der Hin-Schritt ins Leere gehen und der Rück-Schritt die Seite minimal
+  verschieben. Über einem fokussierten Zahlenfeld kann das Rad den Wert kurz ändern (netto zurück). Wer das
+  nicht möchte: Variante abhaken.
+- **Mausbewegung** kann Hover-Effekte (Tooltips, Menüs) kurz auslösen.
 
 ## Funktionsweise
 
@@ -71,8 +99,8 @@ Protokoll: `%LOCALAPPDATA%\AwakeToggle\awaketoggle.log` (+ eine Sicherung `.log.
   Hintergrund-Thread, solange aktiv. Verhindert Ruhezustand und Abschalten des Bildschirms.
   Hinweis: Laut Microsoft hält dieser Aufruf den **Bildschirmschoner** nicht auf; das erledigt das Eingabesignal,
   solange dessen Abstand kürzer ist als die Bildschirmschoner-Wartezeit.
-- **Signal:** `SendInput` – Maus relativ +1/−1 Pixel (Position wird danach geprüft und ggf. zurückgesetzt)
-  oder F15 drücken/loslassen.
+- **Signal:** `SendInput` – Maus relativ +1/−1 Pixel (Position wird danach geprüft und ggf. zurückgesetzt),
+  F15 drücken/loslassen oder eine der Zufallsvarianten.
 - **Intelligentes Pausieren:** Vor jedem Signal wird `GetLastInputInfo` gelesen. Kam die letzte Eingabe von Ihnen
   und liegt sie weniger als den Abstand zurück, wird nichts gesendet; der nächste Versuch erfolgt genau dann,
   wenn Ihre Eingabe den Abstand erreicht. Eigene Signale werden erkannt und nicht mit Ihren Eingaben verwechselt.
