@@ -29,7 +29,7 @@ class Config:
     verbose_log: bool = False
     random_variants: tuple = VARIANTS
     jitter_percent: int = 0
-    browse_processes: tuple = ("msedge.exe",)
+    browse_processes: tuple = ()
     browse_actions_max: int = 20
     browse_exclude: tuple = ()
 
@@ -89,8 +89,8 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
     values["jitter_percent"] = int(jp)
 
     bp = raw.get("browse_processes", list(d.browse_processes))
-    if not isinstance(bp, list) or not bp or any(not isinstance(v, str) or not v.strip() for v in bp):
-        warnings.append(f"browse_processes={bp!r} ungültig (Liste von Programmnamen wie msedge.exe), nutze msedge.exe")
+    if not isinstance(bp, list) or any(not isinstance(v, str) or not v.strip() for v in bp):
+        warnings.append(f"browse_processes={bp!r} ungültig (Liste von Programmnamen wie powerbrowser.exe), nutze []")
         bp = d.browse_processes
     values["browse_processes"] = tuple(dict.fromkeys(v.strip().lower() for v in bp))
 

@@ -283,6 +283,9 @@ def selftest() -> int:
 # ---------- Browser-Test: Fenster, Prozesse, Tastatur und Maus ----------
 
 GA_ROOTOWNER = 3
+GW_OWNER = 4
+SW_RESTORE = 9
+VK_MENU = 0x12
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_UNICODE = 0x0004
@@ -319,6 +322,12 @@ user32.BringWindowToTop.argtypes = [wintypes.HWND]
 user32.BringWindowToTop.restype = wintypes.BOOL
 user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
 user32.AttachThreadInput.restype = wintypes.BOOL
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.IsIconic.restype = wintypes.BOOL
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.ShowWindow.restype = wintypes.BOOL
+user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindow.restype = wintypes.HWND
 user32.GetSystemMetrics.argtypes = [ctypes.c_int]
 user32.GetSystemMetrics.restype = ctypes.c_int
 kernel32.GetCurrentThreadId.argtypes = []
@@ -418,8 +427,34 @@ class Desktop:
         user32.EnumWindows(WNDENUMPROC(cb), 0)
         return found
 
+    def find_browser(self, names) -> int:
+        """Oberstes sichtbares Hauptfenster eines Browsers (EnumWindows liefert in Z-Reihenfolge)."""
+        found = []
+
+        def cb(h, _):
+            if user32.IsWindowVisible(h) and not user32.GetWindow(h, GW_OWNER) and \
+                    user32.GetWindowTextLengthW(h) > 0 and self.process_name(h) in names:
+                left, top, right, bottom = self.window_rect(h)
+                if right - left > 200 and bottom - top > 200 or user32.IsIconic(h):
+                    found.append(h)
+                    return False
+            return True
+        user32.EnumWindows(WNDENUMPROC(cb), 0)
+        return found[0] if found else 0
+
     def activate(self, h: int) -> bool:
+        if user32.IsIconic(h):
+            user32.ShowWindow(h, SW_RESTORE)
+            time.sleep(0.3)
         if user32.SetForegroundWindow(h) and self.root(self.foreground()) == h:
+            return True
+        self.send(_vk_input(VK_MENU, False))
+        try:
+            user32.SetForegroundWindow(h)
+        finally:
+            self.send(_vk_input(VK_MENU, True))
+        time.sleep(0.05)
+        if self.root(self.foreground()) == h:
             return True
         fg_thread = user32.GetWindowThreadProcessId(self.foreground(), None)
         me = kernel32.GetCurrentThreadId()

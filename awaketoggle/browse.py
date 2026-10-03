@@ -8,6 +8,10 @@ from dataclasses import dataclass, field
 from . import queries
 from .variants import Plan
 
+KNOWN_BROWSERS = frozenset({
+    "msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe", "opera.exe", "chromium.exe", "thorium.exe",
+    "browser.exe", "arc.exe",
+})
 MAX_TABS = 6
 MAX_WINDOWS = 2
 LOAD_TIMEOUT_S = 15.0

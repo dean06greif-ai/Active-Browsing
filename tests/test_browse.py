@@ -79,6 +79,9 @@ class FakeDesk:
         self.z.append(h)
         return True
 
+    def find_browser(self, names):
+        return next((h for h in reversed(self.z) if self.wins[h]["proc"] in names), 0)
+
     def _open(self, private=False, title="Neuer Tab"):
         h = self.next
         self.next += 1
@@ -209,9 +212,36 @@ def test_runner_runs_and_cleans_up_without_touching_user_window():
         assert desk.pos == (300, 300)
 
 
-def test_runner_skips_when_browser_not_in_front():
+def test_runner_skips_when_no_browser_window_exists():
     desk, _, res = run(1, user_proc="notepad.exe")
-    assert res.status == "skipped" and "notepad.exe" in res.text and desk.sent == []
+    assert res.status == "skipped" and "kein Browserfenster" in res.text and "notepad.exe" in res.text
+    assert desk.sent == []
+
+
+def test_runner_brings_browser_to_front_when_tray_or_desktop_is_active():
+    desk = FakeDesk(user_proc="chrome.exe")
+    desk.wins[2] = {"proc": "explorer.exe", "tabs": 1, "title": "Taskleiste", "private": False}
+    desk.z.append(2)
+    runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(3))
+    res = runner.run(make_scenario(Config(signal="browse"), random.Random(3)), ())
+    assert res.status == "done", res
+    assert all(h != 2 for h, _ in desk.sent)
+    assert [k for h, k in desk.sent if h == USER] in (["ctrl+n"], ["ctrl+shift+n"])
+    assert set(desk.wins) == {USER, 2}
+
+
+def test_runner_accepts_custom_browser_and_skips_if_activation_fails():
+    desk = FakeDesk(user_proc="powerbrowser.exe")
+    desk.wins[2] = {"proc": "explorer.exe", "tabs": 1, "title": "Desktop", "private": False}
+    desk.z.append(2)
+    runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(1))
+    plan = make_scenario(Config(signal="browse"), random.Random(1))
+    assert runner.run(plan, ()).status == "skipped"
+    desk.activate_ok = False
+    res = runner.run(plan, ("powerbrowser.exe",))
+    assert res.status == "skipped" and "nicht nach vorne" in res.text and desk.sent == []
+    desk.activate_ok = True
+    assert runner.run(plan, ("powerbrowser.exe",)).status == "done"
 
 
 def test_runner_aborts_on_user_input_and_cleans_up_next_time():
@@ -302,7 +332,7 @@ def test_config_browse_keys(tmp_path):
     cfg, warnings = load(p)
     assert warnings == [] and cfg.signal == "browse"
     assert cfg.browse_processes == ("msedge.exe", "chrome.exe") and cfg.browse_exclude == ("klicken",)
-    p.write_text(json.dumps({"browse_processes": [], "browse_actions_max": 500, "browse_exclude": ["xyz"]}), "utf-8")
+    p.write_text(json.dumps({"browse_processes": [""], "browse_actions_max": 500, "browse_exclude": ["xyz"]}), "utf-8")
     cfg, warnings = load(p)
     assert len(warnings) == 3 and cfg == Config()
     assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}

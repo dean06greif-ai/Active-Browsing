@@ -14,7 +14,7 @@ def test_creates_defaults(tmp_path):
     assert json.loads(p.read_text("utf-8")) == {
         "interval_seconds": 60, "signal": "mouse", "timer_hours": 0, "start_active": False, "verbose_log": False,
         "random_variants": ["mouse", "scroll", "keys"], "jitter_percent": 0,
-        "browse_processes": ["msedge.exe"], "browse_actions_max": 20, "browse_exclude": []}
+        "browse_processes": [], "browse_actions_max": 20, "browse_exclude": []}
 
 
 def test_roundtrip(tmp_path):

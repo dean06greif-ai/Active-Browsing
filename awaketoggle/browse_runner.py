@@ -4,7 +4,7 @@ import random
 import time
 from dataclasses import dataclass, field
 
-from .browse import combo
+from .browse import KNOWN_BROWSERS, combo
 
 log = logging.getLogger(__name__)
 
@@ -41,10 +41,10 @@ class Runner:
 
     def run(self, plan, processes, cancel=lambda: False, verbose=False) -> Result:
         d = self.desk
-        fg = d.root(d.foreground())
-        proc = d.process_name(fg) if fg else ""
-        if not fg or proc not in processes:
-            return Result("skipped", f"Browser nicht im Vordergrund ({proc or 'kein Fenster'})")
+        processes = frozenset(processes) | KNOWN_BROWSERS
+        fg = self._bring_browser_to_front(processes)
+        if isinstance(fg, Result):
+            return fg
         self._processes, self._cancel, self._base = processes, cancel, fg
         self._problems, self._stack, self._opened = [], [], False
         self._mark()
@@ -73,6 +73,24 @@ class Runner:
         if self._problems:
             text += f", {len(self._problems)} Auffälligkeit(en)"
         return Result("done", text, done, self._problems)
+
+    def _bring_browser_to_front(self, processes):
+        d = self.desk
+        fg = d.root(d.foreground())
+        proc = d.process_name(fg) if fg else ""
+        if fg and proc in processes:
+            return fg
+        h = d.find_browser(processes)
+        if not h:
+            return Result("skipped", f"kein Browserfenster gefunden (vorne: {proc or '-'}) – "
+                                     "Programmname in browse_processes eintragen")
+        if not d.activate(h):
+            return Result("skipped", f"Browser ließ sich nicht nach vorne holen (vorne: {proc or '-'})")
+        self._sleep(0.5)
+        if d.root(d.foreground()) != h:
+            return Result("skipped", f"Browser ließ sich nicht nach vorne holen (vorne: {proc or '-'})")
+        log.info("Browserfenster (%s) nach vorne geholt, vorher vorne: %s", d.process_name(h), proc or "-")
+        return h
 
     def _cleanup_leftover(self) -> None:
         old, self.leftover = [h for h in self.leftover if self.desk.is_window(h)], []
