@@ -16,6 +16,10 @@ User choices: Windows; risky shortcuts completely excluded (Alt+F4, Ctrl+Shift+W
 - README section "Browser-Test"
 - NOT run on real Windows yet (only static review + CI selftest)
 
+## Bug fix (2026-06)
+- Browser-Test paused with "Browser nicht im Vordergrund (explorer.exe)": runner now brings the most recent browser window to front (restore minimized, SetForegroundWindow/Alt trick/AttachThreadInput); KNOWN_BROWSERS (Chrome, Edge, Brave, Vivaldi, Opera, …) always accepted; browse_processes = extra programs, default []
+- 45 tests pass
+
 ## Backlog
 - P1: real Windows test with Edge / Power Browser, tune toolbar offset & timings
 - P1: CSV/HTML report of runs (load times per query)

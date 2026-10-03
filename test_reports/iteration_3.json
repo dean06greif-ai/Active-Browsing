@@ -1,0 +1,22 @@
+{
+  "summary": "Ran full pytest suite for AwakeToggle browser-test bug fixes. 45/45 tests pass in ~1s. Verified both bug fixes (foreground-is-explorer handling + KNOWN_BROWSERS auto-accept) and reviewed new Windows-only Desktop.find_browser / Desktop.activate code statically (cannot execute on Linux).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_browse.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "awaketoggle/browse_runner.py _bring_browser_to_front: correctly accepts fg already in processes, else desk.find_browser + desk.activate + 0.5s settle + re-check foreground; only ever sends keys to the user's browser window, never to explorer.exe. Verified by test_runner_brings_browser_to_front_when_tray_or_desktop_is_active (fg=explorer, chrome in back) and test_runner_accepts_custom_browser_and_skips_if_activation_fails.",
+    "awaketoggle/browse.py KNOWN_BROWSERS includes chrome.exe, msedge.exe, brave.exe, vivaldi.exe, opera.exe, chromium.exe, thorium.exe, browser.exe, arc.exe. Runner.run merges `frozenset(processes) | KNOWN_BROWSERS` so empty browse_processes still works for all Chromium forks (fixes the user's Chrome+explorer.exe scenario).",
+    "awaketoggle/config.py: browse_processes default now `()` and empty list is accepted (no warning emitted when list is empty) - matches spec.",
+    "awaketoggle/core.py _browse: publishes `on` on done/aborted and `paused` only on `skipped`; so after the fix the lamp will no longer stay orange when a Chromium fork is in the background.",
+    "awaketoggle/win32.py Desktop.find_browser: EnumWindows returns in Z-order (top first); callback filters IsWindowVisible, not GW_OWNER, title length > 0, process_name in names, and either size >200x200 OR IsIconic. Returns first match (= topmost). Operator precedence `A and B or C` is correct here (big OR iconic). Looks sound.",
+    "awaketoggle/win32.py Desktop.activate: Handles SW_RESTORE for minimized, direct SetForegroundWindow, then Alt-key trick (press+release VK_MENU bracketing SetForegroundWindow to bypass SPI_SETFOREGROUNDLOCKTIMEOUT), then AttachThreadInput+BringWindowToTop+SetForegroundWindow fallback. Each stage re-checks root(foreground())==h. Standard Win32 recipe, looks correct.",
+    "Minor: Desktop.send = staticmethod(Win32Api._send) couples Desktop to Win32Api internals; not a bug, just a cohesion note."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (45/45)", "frontend": "n/a"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pure-Python Windows tray app. tests/test_browse.py uses FakeDesk with fake clock. Win32 modules can't import on Linux - only static review possible for awaketoggle/win32.py Desktop class. Full suite runs in ~1s via: cd /app && timeout 120 python -m pytest -q tests -p no:cacheprovider."
+}

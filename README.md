@@ -55,7 +55,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
   "verbose_log": false,
   "random_variants": ["mouse", "scroll", "keys"],
   "jitter_percent": 0,
-  "browse_processes": ["msedge.exe"],
+  "browse_processes": [],
   "browse_actions_max": 20,
   "browse_exclude": []
 }
@@ -70,7 +70,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `verbose_log` | `true` / `false` | jedes gesendete Signal protokollieren (für Tests) |
 | `random_variants` | Liste aus `mouse`, `scroll`, `keys` | Varianten für `signal: random` (mind. eine) |
 | `jitter_percent` | 0–50 | Abstand zufällig um bis zu so viel Prozent **kürzer** (nie länger) |
-| `browse_processes` | Liste von Programmnamen | Browser-Test läuft nur, wenn das Vordergrundfenster zu einem davon gehört |
+| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser (z. B. `powerbrowser.exe`); Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc und Yandex werden immer erkannt |
 | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
 | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
 
@@ -105,9 +105,10 @@ Bewusste Grenzen:
 
 Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv) ein **Durchlauf**:
 
-1. Prüfen, ob ein Fenster aus `browse_processes` im Vordergrund ist – sonst gelbes Symbol
-   „Pausiert, Browser nicht im Vordergrund (programm.exe)“. Der angezeigte Name kann direkt in
-   `browse_processes` eingetragen werden (z. B. für Power Browser).
+1. Browser nach vorne holen: Ist gerade kein Browser vorn (z. B. Taskleiste, Infobereich oder Desktop), wird das
+   zuletzt benutzte Browserfenster automatisch nach vorne geholt (auch aus der Minimierung). Gibt es keins, zeigt
+   das gelbe Symbol „Pausiert, kein Browserfenster gefunden (vorne: programm.exe)“. Ein eigener Browser, der nicht
+   erkannt wird, kommt mit seinem Programmnamen in `browse_processes`.
 2. **Eigenes Fenster öffnen** (Strg+N oder Strg+Shift+N InPrivate). Ihre vorhandenen Fenster und Tabs werden nie
    bedient, geschlossen oder verändert – alles Weitere passiert nur im neuen Testfenster.
 3. Zufällige **Stimmung** (ruhig / normal / hektisch: Wartezeiten und Tippgeschwindigkeit) und 1/3 bis volle
