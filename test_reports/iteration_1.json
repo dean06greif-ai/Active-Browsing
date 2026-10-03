@@ -1,0 +1,33 @@
+{
+  "summary": "Backend-only (pure Python desktop tool) review of AwakeToggle. Ran pytest tests on Linux (24/24 pass). Instantiated TrayApp with PYSTRAY_BACKEND=dummy using FakeApi; verified German menu structure, config.json persistence on setting changes (interval/signal/timer), and toggle semantics. Static review of win32.py / session.py ctypes definitions, core.py scheduling, config.py validation, workflow and build.ps1 performed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "awaketoggle/session.py::_wndproc", "issue": "WTSUnRegisterSessionNotification is called inside WM_DESTROY (hwnd already being destroyed). Convention is to call it before window destruction (e.g., on WM_CLOSE handler or before DestroyWindow). Works in practice but is slightly non-idiomatic."},
+      {"endpoint": "awaketoggle/core.py::decide", "issue": "OWN_SLACK_MS=250 means a real user input arriving within 250 ms after an own-signal is classified as WAIT (own signal). Acceptable trade-off, but worth documenting."},
+      {"endpoint": "awaketoggle/tray.py::_toggle_autostart", "issue": "On exception, the exception variable 'e' is captured in the format string but 'log.exception' already logs trace; the user-visible notify text could be truncated/unhelpful for long PermissionErrors. Minor UX only."},
+      {"endpoint": "awaketoggle/app.py::signal handler", "issue": "signal.signal(SIGTERM/SIGBREAK, lambda s,f: stop(...)) binds callbacks that call tray.stop() which must be called from the main thread. SIGBREAK handlers on Windows run on a dedicated thread; same for SIGTERM via console. May be racy with pystray on Windows, but SetConsoleCtrlHandler path already covers normal shutdown."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_core.py", "/app/tests/test_config.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional) Move WTSUnRegisterSessionNotification out of WM_DESTROY handler into stop()/pre-destroy flow.",
+    "(Optional) Clarify in README/comment the 250 ms own-signal grace window behavior."
+  ],
+  "critical_code_review_comments": [
+    "win32.py: INPUT size check in selftest (40 bytes on 64-bit, 28 on 32-bit) is correct; MOUSEINPUT/KEYBDINPUT structs and argtypes/restypes look right. SendInput, GetLastInputInfo, SetThreadExecutionState, CreateMutexW, GetTickCount all declared with proper WinDLL + use_last_error.",
+    "session.py: WNDPROC and WNDCLASSW defined correctly (WNDCLASSW has no cbSize, matches the ANSI/W non-EX variant). Message loop uses GetMessageW/TranslateMessage/DispatchMessageW with MSG from wintypes. Proper handling of WM_WTSSESSION_CHANGE, WM_QUERYENDSESSION (returns 1 TRUE to permit), WM_ENDSESSION, WM_POWERBROADCAST, WM_DESTROY.",
+    "core.decide/Engine.step/_tick: correctly separates SEND, WAIT (own), USER_ACTIVE, LOCKED. Uses GetTickCount wraparound-safe diff via (a-b) & 0xFFFFFFFF. Timer handling in step() both checks deadline at the top and clamps timeout to deadline. Shutdown releases execution state on worker thread via _run.finally._release() and also directly if called from a non-worker thread. Timer config change via update_config correctly recomputes deadline.",
+    "config.py: validate() rejects bool as number (via _is_number), bounds-checks interval/timer, accepts float timer values, warns on unknown keys. load() handles UTF-8 BOM via 'utf-8-sig' and backs up invalid JSON to config.invalid.json before writing defaults.",
+    "tray.py: Menu structure (Signal/Abstand/Automatisch abschalten/Autostart/Reload/Beenden) is correct and in German. _change writes config.json then updates engine. Autostart menu item uses tray-level toggle (startup-folder shortcut, no registry). _custom item hides when the stored value is a listed choice, exposes it otherwise.",
+    "build.yml: pins Python 3.12, caches pip for both requirement files, runs pytest, runs --selftest in Python and from the built exe, computes SHA256, uploads artifact, creates release only on v* tag. permissions: contents:write set. Looks solid.",
+    "build.ps1: Set-Location to repo root via Split-Path $PSScriptRoot -Parent, generates ICO, calls PyInstaller onefile/noconsole with icon, hidden-import pystray._win32, excludes tkinter/unittest/pydoc/doctest. Checks $LASTEXITCODE after each step."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A (no frontend)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pure Python Windows tray tool. Linux CI can only run pytest. All 24 tests pass. Win32-specific code (win32.py, session.py, app.py main loop, autostart PowerShell path) must be validated on a real Windows runner via the GitHub Actions workflow and --selftest. TrayApp can be smoke-tested headless on Linux with PYSTRAY_BACKEND=dummy + FakeApi, monkeypatching icon.update_menu."
+}

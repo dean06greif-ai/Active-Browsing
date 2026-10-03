@@ -1,0 +1,308 @@
+import random
+
+from awaketoggle import queries
+from awaketoggle.browse import ACTION_IDS, BLOCKED, MAX_TABS, VK, make_scenario
+from awaketoggle.browse_runner import Runner
+from awaketoggle.config import Config
+from tests.test_core import make
+
+NAMES = {v: k for k, v in VK.items()}
+USER = 1
+
+
+class FakeDesk:
+    """Simulierter Desktop mit einem Chromium-ähnlichen Browser."""
+
+    def __init__(self, user_proc="msedge.exe", popup_every=0, user_input_at_ms=None):
+        self.ms = 1_000_000
+        self.last = self.ms
+        self.wins = {USER: {"proc": user_proc, "tabs": 3, "title": "Benutzer", "private": False}}
+        self.z = [USER]
+        self.next = 100
+        self.sent = []
+        self.clicks = 0
+        self.popup_every = popup_every
+        self.user_input_at = user_input_at_ms
+        self.pos = (300, 300)
+        self.activate_ok = True
+
+    # Zeit
+    def sleep(self, s):
+        self.ms += max(1, round(s * 1000))
+
+    def clock(self):
+        return self.ms / 1000
+
+    def tick(self):
+        return self.ms & 0xFFFFFFFF
+
+    def last_input_tick(self):
+        if self.user_input_at is not None and self.ms >= self.user_input_at:
+            self.last = max(self.last, self.user_input_at)
+        return self.last & 0xFFFFFFFF
+
+    def _input(self):
+        self.last = self.ms
+
+    # Fenster
+    def foreground(self):
+        return self.z[-1] if self.z else 0
+
+    def root(self, h):
+        return h
+
+    def process_name(self, h):
+        return self.wins[h]["proc"] if h in self.wins else ""
+
+    def is_window(self, h):
+        return h in self.wins
+
+    def is_visible(self, h):
+        return h in self.wins
+
+    def title(self, h):
+        return self.wins[h]["title"] if h in self.wins else ""
+
+    def window_rect(self, h):
+        return 0, 0, 1600, 900
+
+    def dpi(self, h):
+        return 96
+
+    def top_windows(self):
+        return set(self.wins)
+
+    def activate(self, h):
+        if not self.activate_ok or h not in self.wins:
+            return False
+        self.z.remove(h)
+        self.z.append(h)
+        return True
+
+    def _open(self, private=False, title="Neuer Tab"):
+        h = self.next
+        self.next += 1
+        self.wins[h] = {"proc": "msedge.exe", "tabs": 1, "title": title, "private": private}
+        self.z.append(h)
+        return h
+
+    def _close(self, h):
+        del self.wins[h]
+        self.z.remove(h)
+
+    # Eingaben
+    def cursor(self):
+        return self.pos
+
+    def move_to(self, x, y):
+        self._input()
+        self.pos = (x, y)
+
+    def click(self):
+        self._input()
+        self.clicks += 1
+        h = self.foreground()
+        self.wins[h]["title"] = f"Seite {self.ms}"
+        if self.popup_every and self.clicks % self.popup_every == 0:
+            self._open(title="Popup")
+
+    def wheel(self, delta):
+        self._input()
+
+    def type_char(self, ch):
+        self._input()
+        self.sent.append((self.foreground(), ch))
+
+    def send_combo(self, vks):
+        self._input()
+        name = "+".join(NAMES[v] for v in vks)
+        h = self.foreground()
+        self.sent.append((h, name))
+        w = self.wins.get(h)
+        if w is None:
+            return
+        if name == "ctrl+n":
+            self._open()
+        elif name == "ctrl+shift+n":
+            self._open(private=True)
+        elif name in ("ctrl+t", "ctrl+shift+k", "ctrl+u"):
+            w["tabs"] += 1
+        elif name == "ctrl+shift+t":
+            w["tabs"] += 1
+        elif name == "ctrl+w":
+            w["tabs"] -= 1
+            if w["tabs"] == 0:
+                self._close(h)
+        elif name in ("enter", "ctrl+enter"):
+            w["title"] = f"Ergebnis {self.ms}"
+
+
+def run(seed, cfg=None, **desk_kw):
+    desk = FakeDesk(**desk_kw)
+    cfg = cfg or Config(signal="browse")
+    plan = make_scenario(cfg, random.Random(seed))
+    runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(seed))
+    return desk, runner, runner.run(plan, cfg.browse_processes)
+
+
+def all_combos(plan):
+    for _, steps in plan.steps:
+        for s in steps:
+            if s[0] in ("key", "nav", "new_window"):
+                yield s[1]
+
+
+def test_scenario_never_uses_blocked_shortcuts_and_is_balanced():
+    for seed in range(300):
+        plan = make_scenario(Config(signal="browse", browse_actions_max=40), random.Random(seed))
+        combos = list(all_combos(plan))
+        assert not set(combos) & BLOCKED
+        assert plan.steps[0][1][0][0] == "new_window"
+        opened = sum(1 for _, st in plan.steps for s in st if s[0] == "new_window")
+        closed = sum(1 for _, st in plan.steps for s in st if s[0] == "close_window")
+        assert opened == closed
+        assert plan.steps[-1][0] == "aufräumen"
+        assert combos.count("f11") % 2 == 0 and combos.count("ctrl+shift+b") % 2 == 0
+        assert combos.count("ctrl+m") % 2 == 0
+        if "ctrl+add" in combos:
+            assert "ctrl+0" in combos
+
+
+def test_scenario_searches_with_numbers_and_respects_exclude():
+    cfg = Config(signal="browse", browse_exclude=("klicken", "inprivate_fenster", "vollbild"))
+    names, typed = set(), []
+    for seed in range(200):
+        plan = make_scenario(cfg, random.Random(seed))
+        names |= {n for n, _ in plan.steps}
+        typed += [s[1] for _, st in plan.steps for s in st if s[0] == "type"]
+        assert all(s[1] != "ctrl+shift+n" for _, st in plan.steps for s in st if s[0] == "new_window")
+    assert "suche" in names and not names & {"klicken", "inprivate_fenster", "vollbild"}
+    assert sum(any(c.isdigit() for c in t) for t in typed) > 50
+    assert len(names - {"aufräumen"}) > 25
+
+
+def test_scenario_tab_model_stays_in_bounds():
+    for seed in range(200):
+        plan = make_scenario(Config(signal="browse", browse_actions_max=60), random.Random(seed))
+        tabs = [1]
+        for name, steps in plan.steps:
+            for s in steps:
+                if s[0] == "new_window":
+                    tabs.append(1)
+                elif s[0] == "close_window":
+                    tabs.pop()
+                elif s[0] == "key" and s[1] in ("ctrl+t", "ctrl+shift+t", "ctrl+shift+k"):
+                    tabs[-1] += 1
+                elif s[0] == "key" and s[1] == "ctrl+w" and name != "quelltext":
+                    tabs[-1] -= 1
+                    assert tabs[-1] >= 1
+            assert all(t <= MAX_TABS for t in tabs[1:])
+
+
+def test_runner_runs_and_cleans_up_without_touching_user_window():
+    for seed in range(60):
+        desk, _, res = run(seed)
+        assert res.status == "done", (seed, res)
+        assert set(desk.wins) == {USER} and desk.wins[USER]["tabs"] == 3
+        user_keys = [k for h, k in desk.sent if h == USER]
+        assert user_keys in (["ctrl+n"], ["ctrl+shift+n"]), (seed, user_keys)
+        assert desk.pos == (300, 300)
+
+
+def test_runner_skips_when_browser_not_in_front():
+    desk, _, res = run(1, user_proc="notepad.exe")
+    assert res.status == "skipped" and "notepad.exe" in res.text and desk.sent == []
+
+
+def test_runner_aborts_on_user_input_and_cleans_up_next_time():
+    desk, runner, res = run(5, user_input_at_ms=1_000_000 + 4_000)
+    assert res.status == "aborted" and res.text == "Sie sind aktiv"
+    count = len(desk.sent)
+    desk.sleep(3)
+    assert len(desk.sent) == count
+    leftover = [h for h in desk.wins if h != USER]
+    assert runner.leftover == leftover and leftover
+    desk.user_input_at = None
+    desk.activate(USER)
+    res = runner.run(make_scenario(Config(signal="browse"), random.Random(9)), ("msedge.exe",))
+    assert res.status == "done" and set(desk.wins) == {USER}
+
+
+def test_runner_closes_popups_opened_by_clicks():
+    seen = 0
+    for seed in range(80):
+        desk, _, res = run(seed, popup_every=1)
+        assert res.status == "done", (seed, res)
+        assert set(desk.wins) == {USER}
+        if desk.clicks:
+            seen += 1
+            assert any("Popup" in p for p in res.problems)
+    assert seen > 10
+
+
+def test_runner_stops_when_focus_moves_to_foreign_window():
+    desk = FakeDesk()
+    desk.activate_ok = False
+    plan = make_scenario(Config(signal="browse"), random.Random(2))
+    runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(2))
+    orig = desk.send_combo
+
+    def steal(vks):
+        orig(vks)
+        if len(desk.sent) == 6:
+            desk.wins[50] = {"proc": "explorer.exe", "tabs": 1, "title": "Fremd", "private": False}
+            desk.z.append(50)
+    desk.send_combo = steal
+    res = runner.run(plan, ("msedge.exe",))
+    desk.wins[50]["tabs"] = 1
+    assert res.status == "aborted"
+    assert all(h != 50 for h, _ in desk.sent)
+
+
+def test_queries_variety():
+    rng = random.Random(4)
+    qs = [queries.make_query(rng) for _ in range(500)]
+    assert all(q.strip() for q in qs)
+    assert len(set(qs)) > 400
+    assert sum(q.isdigit() for q in qs) > 20
+    assert queries.typo("wetter berlin", random.Random(1)) != "wetter berlin"
+
+
+def test_engine_browse_mode():
+    from awaketoggle.browse_runner import Result
+    api, _, eng = make(Config(signal="browse"))
+    calls = []
+
+    def browse(plan, cfg, cancel):
+        calls.append(plan)
+        assert not cancel()
+        api.last = api.now
+        return Result("done", "12 Aktionen in 90 s")
+    api.browse = browse
+    eng.set_active(True)
+    api.advance(60_000)
+    assert eng.step() == 60.0
+    assert len(calls) == 1 and calls[0].kind == "browse"
+    assert "Browser-Test" in eng.status.text and eng.status.state == "on"
+    api.advance(30_000)
+    eng.step()
+    assert len(calls) == 1
+    api.browse = lambda plan, cfg, cancel: Result("skipped", "Browser nicht im Vordergrund (x.exe)")
+    api.advance(60_000)
+    eng.step()
+    assert eng.status.state == "paused" and "x.exe" in eng.status.text
+
+
+def test_config_browse_keys(tmp_path):
+    import json
+    from awaketoggle.config import load
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"signal": "browse", "browse_processes": ["MSEdge.exe ", "chrome.exe"],
+                             "browse_actions_max": 40, "browse_exclude": ["klicken"]}), "utf-8")
+    cfg, warnings = load(p)
+    assert warnings == [] and cfg.signal == "browse"
+    assert cfg.browse_processes == ("msedge.exe", "chrome.exe") and cfg.browse_exclude == ("klicken",)
+    p.write_text(json.dumps({"browse_processes": [], "browse_actions_max": 500, "browse_exclude": ["xyz"]}), "utf-8")
+    cfg, warnings = load(p)
+    assert len(warnings) == 3 and cfg == Config()
+    assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}
