@@ -471,6 +471,9 @@ class Desktop:
                 self.send(_vk_input(vk, True))
 
     def type_char(self, ch: str) -> None:
-        self.send(_unicode_input(ch, False))
-        time.sleep(0.01)
-        self.send(_unicode_input(ch, True))
+        units = ch.encode("utf-16-le")
+        for i in range(0, len(units), 2):
+            unit = chr(int.from_bytes(units[i:i + 2], "little"))
+            self.send(_unicode_input(unit, False))
+            time.sleep(0.01)
+            self.send(_unicode_input(unit, True))

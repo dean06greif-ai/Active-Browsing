@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only (pure Python Windows tray tool) regression testing for the new Browser-Test feature. Ran full pytest suite on Linux: 43/43 tests pass in ~1.08s. Covered: scenario generator (BLOCKED-free, balanced open/close windows, toggle balance, zoom->ctrl+0, exclude list respected, tab bounds, numeric queries), query generator (variety+numbers+typos), Runner with FakeDesk (own-window-only keystrokes, popup closing, user-input abort+next-run cleanup, foreign-foreground abort, skip when non-browser foreground), Engine._browse (status on/paused, interval scheduling), and config.py validation of browse_processes/browse_actions_max/browse_exclude. Static code review of Windows-only Desktop class (ctypes signatures, SendInput extended-key flags, unicode typing, virtual-desktop absolute mouse move, swapped-button click, GA_ROOTOWNER, QueryFullProcessImageNameW, AttachThreadInput activation) performed - no bugs found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "awaketoggle/win32.py::Desktop.type_char", "issue": "KEYEVENTF_UNICODE path uses ord(ch) as single UTF-16 wScan; astral code points (ord > 0xFFFF, e.g. emoji) would need two surrogate SendInput calls. Not reachable from current query generator (German/ASCII only), but worth noting."},
+      {"endpoint": "awaketoggle/win32.py::Desktop.activate", "issue": "Calls GetWindowThreadProcessId(foreground(), None) with None for the PID out-param. ctypes accepts None for POINTER(DWORD), so this works, but passing an explicit DWORD byref is slightly more idiomatic/portable."},
+      {"endpoint": "awaketoggle/browse_runner.py::Runner._ensure_focus", "issue": "After _opened and empty _stack, returns immediately without re-checking fg == _base. Benign because the end-of-run cursor reset and _mark() follow, but a user could switch windows between the last close_window and the cursor move; low risk."},
+      {"endpoint": "awaketoggle/browse.py::_view_source", "issue": "quelltext uses ctrl+w to close the source-view tab, which decrements the tab model only via the test exemption in test_scenario_tab_model_stays_in_bounds (skipped for 'quelltext'). In the real browser ctrl+u opens a new tab, so ctrl+w closes that tab - correct runtime behavior; just note the test-model asymmetry already handled."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_browse.py",
+    "/app/tests/test_core.py",
+    "/app/tests/test_config.py",
+    "/app/tests/test_variants.py",
+    "/app/test_reports/pytest/results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "browse.py: BLOCKED set correctly includes all user-forbidden shortcuts (alt+f4, ctrl+shift+w, ctrl+shift+del, ctrl+p, ctrl+s, ctrl+o, f12 plus devtools variants); combo() raises on any BLOCKED combo and VK dict has no entry for Alt+F4 variants outside BLOCKED, giving two layers of defense. make_scenario always starts with _open_window and ends with 'aufräumen' closing every remaining window - verified across 300 seeds.",
+    "browse_runner.Runner: cleanly separates _base (user window, only receives ctrl+n/ctrl+shift+n) from _stack (own windows); _is_new_browser filters by process name + absence from _known/_stack; _check_input raises Abort on cancel() or user activity (OWN_SLACK_MS=400ms window). On Abort, self.leftover is populated and cleaned on next run() call via _cleanup_leftover. _ensure_focus closes same-process popups opened by clicks and aborts if focus moves to a foreign window that can't be re-activated. Test coverage is strong (seeds 0..59 for happy path, popup_every=1 across 80 seeds).",
+    "win32.Desktop: ctypes argtypes/restypes all declared; _vk_input sets KEYEVENTF_EXTENDEDKEY for VK_PRIOR..VK_DOWN, VK_INSERT, VK_DELETE, VK_DIVIDE (0x6F) correctly; _unicode_input uses KEYEVENTF_UNICODE with wVk=0 and wScan=ord(ch); move_to normalizes to 0..65535 across the virtual desktop with MOUSEEVENTF_VIRTUALDESK|ABSOLUTE; click respects SM_SWAPBUTTON; activate uses AttachThreadInput only when needed and detaches in finally; process_name uses QueryFullProcessImageNameW with PROCESS_QUERY_LIMITED_INFORMATION (no admin required); root() uses GA_ROOTOWNER=3.",
+    "queries.make_query: 500-sample test confirms >400 uniques, >20 pure-digit queries; typo() has 4 deterministic variants (swap/drop/double/neighbor); neighbor() uses QWERTZ rows (German keyboard) matching the Windows target.",
+    "config.py: new keys browse_processes (list[str], lowercased+stripped, fallback to defaults with warning on empty), browse_actions_max (int bounds), browse_exclude (filtered against ACTION_IDS with warning on unknowns) - all exercised by test_config_browse_keys.",
+    "core.Engine._browse: calls api.browse(plan, cfg, cancel); on Result.status=='done' sets status 'on' with Browser-Test text and advances schedule by cfg.interval; on 'skipped' pauses with the reason. Integration verified in test_engine_browse_mode."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (43/43 pytest)", "frontend": "N/A (no frontend)"},
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pure Python Windows tray tool - no web UI. Only /app/tests/*.py are runnable on Linux (win32.py/session.py/tray.py cannot import on Linux). All 43 tests pass in ~1s. The FakeDesk in tests/test_browse.py is the only way to exercise browse_runner.Runner on CI. Real-hardware verification (SendInput, EnumWindows, GetDpiForWindow, pystray tray) must happen via the GitHub Actions Windows runner + --selftest."
+}
