@@ -11,7 +11,19 @@ from .variants import Plan
 KNOWN_BROWSERS = frozenset({
     "msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe", "opera.exe", "chromium.exe", "thorium.exe",
     "browser.exe", "arc.exe",
+    "powerbrowser.exe", "power browser.exe", "power-browser.exe", "power_browser.exe", "powerbrowser64.exe",
 })
+
+
+class BrowserNames:
+    """Erkennt Browser: bekannte Programme, eigene Einträge und alles mit „browser“ im Namen (z. B. Power Browser)."""
+
+    def __init__(self, extra=()):
+        self.extra = frozenset(n.lower() for n in extra)
+
+    def __contains__(self, name) -> bool:
+        name = (name or "").lower()
+        return name in self.extra or name in KNOWN_BROWSERS or "browser" in name
 MAX_TABS = 6
 MAX_WINDOWS = 2
 LOAD_TIMEOUT_S = 15.0

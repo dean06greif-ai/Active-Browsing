@@ -230,18 +230,37 @@ def test_runner_brings_browser_to_front_when_tray_or_desktop_is_active():
     assert set(desk.wins) == {USER, 2}
 
 
-def test_runner_accepts_custom_browser_and_skips_if_activation_fails():
+def test_browser_names_include_power_browser():
+    from awaketoggle.browse import BrowserNames
+    names = BrowserNames(("mybrowserx.exe", "PB.exe"))
+    for n in ("powerbrowser.exe", "Power Browser.exe", "PowerBrowserApp.exe", "chrome.exe", "msedge.exe", "pb.exe"):
+        assert n in names, n
+    for n in ("explorer.exe", "notepad.exe", "powershell.exe", "code.exe", "discord.exe", "", None):
+        assert n not in names, n
+
+
+def test_runner_finds_power_browser_behind_taskbar():
     desk = FakeDesk(user_proc="powerbrowser.exe")
+    desk.wins[2] = {"proc": "explorer.exe", "tabs": 1, "title": "Taskleiste", "private": False}
+    desk.z.append(2)
+    runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(4))
+    res = runner.run(make_scenario(Config(signal="browse"), random.Random(4)), ())
+    assert res.status == "done", res
+    assert set(desk.wins) == {USER, 2} and all(h != 2 for h, _ in desk.sent)
+
+
+def test_runner_accepts_custom_browser_and_skips_if_activation_fails():
+    desk = FakeDesk(user_proc="pb.exe")
     desk.wins[2] = {"proc": "explorer.exe", "tabs": 1, "title": "Desktop", "private": False}
     desk.z.append(2)
     runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(1))
     plan = make_scenario(Config(signal="browse"), random.Random(1))
     assert runner.run(plan, ()).status == "skipped"
     desk.activate_ok = False
-    res = runner.run(plan, ("powerbrowser.exe",))
+    res = runner.run(plan, ("pb.exe",))
     assert res.status == "skipped" and "nicht nach vorne" in res.text and desk.sent == []
     desk.activate_ok = True
-    assert runner.run(plan, ("powerbrowser.exe",)).status == "done"
+    assert runner.run(plan, ("pb.exe",)).status == "done"
 
 
 def test_runner_aborts_on_user_input_and_cleans_up_next_time():

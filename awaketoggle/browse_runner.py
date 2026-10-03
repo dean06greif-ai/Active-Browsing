@@ -4,7 +4,7 @@ import random
 import time
 from dataclasses import dataclass, field
 
-from .browse import KNOWN_BROWSERS, combo
+from .browse import BrowserNames, combo
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class Runner:
 
     def run(self, plan, processes, cancel=lambda: False, verbose=False) -> Result:
         d = self.desk
-        processes = frozenset(processes) | KNOWN_BROWSERS
+        processes = BrowserNames(processes)
         fg = self._bring_browser_to_front(processes)
         if isinstance(fg, Result):
             return fg

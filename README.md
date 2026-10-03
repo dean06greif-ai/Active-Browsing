@@ -70,7 +70,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `verbose_log` | `true` / `false` | jedes gesendete Signal protokollieren (für Tests) |
 | `random_variants` | Liste aus `mouse`, `scroll`, `keys` | Varianten für `signal: random` (mind. eine) |
 | `jitter_percent` | 0–50 | Abstand zufällig um bis zu so viel Prozent **kürzer** (nie länger) |
-| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser (z. B. `powerbrowser.exe`); Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc und Yandex werden immer erkannt |
+| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex und jedes Programm mit „browser“ im Namen |
 | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
 | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
 
