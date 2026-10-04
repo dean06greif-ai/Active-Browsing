@@ -1,0 +1,43 @@
+{
+  "summary": "Verified the fix in /app/tools/installieren.ps1 for the PowerShell 5.1 'ArgumentList is NULL or empty' failure. The Start-Process call at the end of the script now uses a splat hashtable and only adds the ArgumentList key when $arguments is non-empty. Parsed all three .ps1 files in /app/tools with PowerShell 7.4.6 (AST parser) - zero syntax errors. Simulated the final Start-Process block in both the exe-built branch (empty $arguments) and the pythonw fallback branch (non-empty $arguments) against /bin/echo; both executed cleanly. Pytest: 88/88 green. No further Windows/PS 5.1 breakage spotted in a line-by-line static review of installieren.ps1 and deinstallieren.ps1.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "tools/installieren.ps1 line 32-33 (pip step)",
+        "issue": "`python -m pip ...` is called with $ErrorActionPreference='Stop'. If 'python' is not in PATH, PS 5.1 raises CommandNotFoundException BEFORE $LASTEXITCODE is checked, so the friendly German hint 'ist Python 3.12 installiert und python im PATH?' is never shown; the user sees the raw .NET exception. Low priority but trivial to improve by wrapping the call in try/catch or by probing Get-Command python first."
+      },
+      {
+        "endpoint": "tools/installieren.ps1 line 37 (build.ps1 invocation)",
+        "issue": "`& (Join-Path $PSScriptRoot 'build.ps1')` is inside try/catch, but PyInstaller writes a lot to stderr during normal builds; with $ErrorActionPreference='Stop' and the surrounding try, a benign stderr line could set $built=false and silently fall back to pythonw.exe. Not a crash, just a degraded install. Consider using `2>&1 | Out-Host` or checking exit code explicitly."
+      },
+      {
+        "endpoint": "tools/installieren.ps1 line 43 (Copy-Item of running exe)",
+        "issue": "Stop-AwakeToggle precedes the Copy-Item, but Windows file locks can linger ~500 ms after process exit. Start-Sleep is 800 ms which is usually enough, however a retry loop around Copy-Item would make the installer robust against the rare case where the previous exe is still mapped."
+      }
+    ]
+  },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/tmp/parse_and_sim.ps1"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIX VERIFIED: The Start-Process splat pattern at lines 59-61 of installieren.ps1 is correct. Simulated with pwsh 7.4.6: when $arguments='' the hashtable contains only {FilePath, WorkingDirectory} (ContainsKey('ArgumentList') => False), so PS 5.1 will no longer attempt to bind an empty string to -ArgumentList. When $arguments is non-empty the key is present and Start-Process launches the target with the args. The original error 'Das Argument fuer den Parameter ArgumentList kann nicht ueberprueft werden. Das Argument ist NULL oder leer.' cannot recur with this code.",
+    "UTF-8 BOM confirmed on both installieren.ps1 and deinstallieren.ps1 (`file` reports 'UTF-8 (with BOM) text'). This is required so that PowerShell 5.1 (default encoding = Windows-1252) correctly reads the German umlauts (ue, oe, ae, sz) in Write-Host/Write-Warning strings. Do NOT let an editor strip the BOM.",
+    "New-Link (lines 21-29) assigns $arguments to the WScript.Shell COM IWshShortcut.Arguments property. Unlike cmdlet parameter binding, COM property assignment accepts empty strings, so passing $arguments='' here is safe and will not reproduce the original error. The $icon case is already guarded by `if ($icon)`.",
+    "Get-CimInstance -Filter \"Name like 'python%'\" uses valid WQL (lowercase 'like', '%' wildcard) and works on PS 5.1 / Windows 7+. Both installieren.ps1 and deinstallieren.ps1 use the same pattern - consistent and correct.",
+    "Positional-parameter function New-Link($path,$target,$arguments,$workdir,$icon) has no [ValidateNotNullOrEmpty()] attributes, so passing '' for $arguments or $icon is accepted. No PS 5.1 trap here.",
+    "deinstallieren.ps1 is clean: no Start-Process, no ArgumentList, uses $ErrorActionPreference='Continue' so a missing shortcut won't abort the uninstall. Idempotent across repeated runs.",
+    "AST parse of /app/tools/*.ps1 via [System.Management.Automation.Language.Parser]::ParseFile returned zero errors for build.ps1, installieren.ps1 and deinstallieren.ps1."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (88/88 pytest)", "frontend": "n/a" },
+  "test_credentials": "n/a",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The ArgumentList fix in installieren.ps1 is verified via pwsh simulation on Linux. Remaining open items are quality-of-life, not correctness: friendlier error when python not on PATH, build.ps1 stderr handling, Copy-Item retry loop. No Windows host is available in this environment, so the actual end-to-end run on PowerShell 5.1 still needs user confirmation, but the specific line-59 crash the user reported cannot recur with the current splat construction.",
+  "rca of the issue": "ROOT CAUSE: In the exe-built success branch (line 44) $arguments was initialised to the empty string ''. The original code then called `Start-Process -FilePath $target -ArgumentList $arguments -WorkingDirectory $workdir`. In PowerShell 5.1 the -ArgumentList parameter on Start-Process has an implicit [ValidateNotNullOrEmpty()]-like check that rejects an empty string, producing the German error 'Das Argument fuer den Parameter ArgumentList kann nicht ueberprueft werden. Das Argument ist NULL oder leer.' MITIGATION (already applied): build the parameter set as a hashtable and add the ArgumentList key only when $arguments is truthy, then splat it: `$startArgs = @{ FilePath=$target; WorkingDirectory=$workdir }; if ($arguments) { $startArgs.ArgumentList = $arguments }; Start-Process @startArgs`. Simulated OK with both empty and non-empty $arguments. REPRO (Windows): Installieren.cmd on a machine where dist\\AwakeToggle.exe builds successfully would hit the error at step 4/4 - now resolved."
+}

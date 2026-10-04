@@ -1,4 +1,5 @@
-$ErrorActionPreference = "Stop"
+# Fehler über Exit-Codes prüfen: PyInstaller schreibt auch bei Erfolg viel nach stderr
+$ErrorActionPreference = "Continue"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 python tools/make_icon.py build/awaketoggle.ico

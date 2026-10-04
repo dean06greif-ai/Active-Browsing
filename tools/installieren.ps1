@@ -29,8 +29,13 @@ function New-Link($path, $target, $arguments, $workdir, $icon) {
 }
 
 Write-Host "1/4 Python-Pakete installieren ..." -ForegroundColor Cyan
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "Python nicht gefunden - bitte Python 3.12 von python.org installieren und 'Add python.exe to PATH' anhaken"
+}
+$ErrorActionPreference = "Continue"
 python -m pip install --disable-pip-version-check -q -r requirements.txt -r requirements-dev.txt
 if ($LASTEXITCODE -ne 0) { throw "pip fehlgeschlagen - ist Python 3.12 installiert und 'python' im PATH?" }
+$ErrorActionPreference = "Stop"
 
 Write-Host "2/4 AwakeToggle.exe bauen (dauert 1-2 Minuten) ..." -ForegroundColor Cyan
 $built = $true
@@ -40,7 +45,10 @@ Write-Host "3/4 Laufendes AwakeToggle beenden und installieren ..." -ForegroundC
 Stop-AwakeToggle
 if ($built) {
     New-Item -ItemType Directory -Force $dest | Out-Null
-    Copy-Item (Join-Path $root "dist\AwakeToggle.exe") $exe -Force
+    for ($i = 1; $i -le 10; $i++) {
+        try { Copy-Item (Join-Path $root "dist\AwakeToggle.exe") $exe -Force; break }
+        catch { if ($i -eq 10) { throw "AwakeToggle.exe ist noch gesperrt: $_" }; Start-Sleep -Milliseconds 500 }
+    }
     $target, $arguments, $workdir, $icon = $exe, "", $dest, "$exe,0"
 } else {
     $py = (Get-Command python).Source
