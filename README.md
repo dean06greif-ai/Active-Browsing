@@ -149,36 +149,54 @@ Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv)
    bedient, geschlossen oder verändert – alles Weitere passiert nur im neuen Testfenster und seinen eigenen Tabs.
    Sollte das neue Fenster doch ein Inkognito-Fenster sein, wird es sofort wieder geschlossen und der Durchlauf
    abgebrochen.
-3. Zufällige **Stimmung** (ruhig / normal / hektisch: Wartezeiten und Tippgeschwindigkeit) und 1/3 bis volle
-   `browse_actions_max` Aktionen, gewichtet nach Zustand: leerer Tab → meist suchen; geladene Seite → lesen,
-   scrollen, klicken, auf der Seite suchen; viele Tabs → eher schließen; dieselbe Aktion selten zweimal hintereinander.
+3. **Wie ein Mensch surfen** – jede Runde ist eine kleine Sitzung einer „Person“ mit festen Gewohnheiten:
+   - **Stimmung** ruhig / normal / hektisch (Tempo von Lesen und Tippen) und eigene **Lesedauer** und **Neugier**,
+   - **Lieblings-Tastenkürzel**: dieselbe Taste für die Adresszeile (meist Strg+L) und fürs Tab-Wechseln, nur
+     ab und zu eine andere – Menschen wechseln nicht bei jeder Suche die Methode,
+   - **Anliegen mit rotem Faden**: z. B. „wetter leipzig“ → Ergebnis öffnen, lesen, zurück → zweites Ergebnis →
+     „wetter leipzig 14 tage“ → „regenradar leipzig“ → neuer Tab für ein Nebenthema („hotel dresden“),
+   - **typischer Ablauf**: Ergebnisliste überfliegen, Treffer anklicken (Maus fährt im Bogen hin, zögert kurz,
+     schießt manchmal minimal übers Ziel), lesen (Scroll-Schübe aus mehreren Raddrehungen, Lesepausen, mal ein
+     Stück zurück, Maus wandert mit), oft zurück zur Liste; Treffer für später per Strg+Klick im Hintergrund-Tab
+     öffnen und danach dorthin wechseln und lesen; ab und zu abgelenkt (Pause bis 45 s),
+   - **Pausen log-normal** statt gleichmäßig: meist kurz, manchmal deutlich länger – wie echte Menschen,
+   - **seltene Browserfunktionen** (Zoom, Verlauf, Vollbild, Menü, Quelltext …) höchstens 2 pro Durchlauf und
+     jede nur einmal (zusammen unter 10 % aller Aktionen).
+   1/3 bis volle `browse_actions_max` Aktionen je Durchlauf.
 4. **Aufräumen:** alle eigenen Fenster mit Strg+W schließen (geprüft über das Fensterhandle), Mauszeiger zurück.
 
-Suchanfragen: Mischung aus zufälligen Zahlen (`4711`, `83 km in meilen`, `plz 04109`, `17 * 23`), Themen und
-Fragen (`wie funktioniert wärmepumpe`), englischen Begriffen und absichtlichen, nicht korrigierten Tippfehlern
-(testet die Rechtschreibkorrektur). Beim Tippen entstehen außerdem gelegentlich Vertipper, die sofort mit
-Rücktaste korrigiert werden. Getippt wird per Unicode, unabhängig vom Tastaturlayout.
+Suchanfragen: rund 20 Themen (Wetter, Rezepte, Fußball, Bahn, Urlaub, Technik, Finanzen, Gesundheit, Haushalt,
+Garten, Wissensfragen, Freizeit, Job, Behörden, Auto, Tiere, Programmieren, Englisch, Rechnen/Umrechnen, Zahlen)
+mit Startanfrage, Verfeinerungen und verwandten Fragen, Städten, Vereinen und Jahren. Zahlen so, wie Menschen sie
+tippen (`17 * 23`, `83 km in meilen`, `19 prozent von 250`, Postleitzahlen, Jahreszahlen). Etwa jede achte Anfrage
+hat einen absichtlichen, nicht korrigierten Tippfehler (testet die Rechtschreibkorrektur). **Tipprhythmus**:
+unregelmäßig, nach Leerzeichen länger, Zahlen und Umlaute langsamer, Doppelbuchstaben schneller, manchmal kurzes
+Überlegen; Vertipper werden wie bei Menschen oft erst ein, zwei Zeichen später bemerkt und mit mehreren
+Rücktasten korrigiert. Getippt wird per Unicode, unabhängig vom Tastaturlayout.
 
 | ID | Ablauf (Tastenkürzel) |
 |---|---|
-| `suche` | Strg+E / Strg+K / Alt+D / Strg+L / F4, Anfrage tippen, Enter – manchmal nur anfangen, Vorschlag mit ↓ wählen |
-| `suche_abbrechen` | Adressleiste, halbe Anfrage tippen, Esc |
+| `suche` | neues Anliegen: Adresszeile (Lieblingstaste), Anfrage tippen, Enter – manchmal nur anfangen, Vorschlag mit ↓ wählen; Ergebnisliste überfliegen |
+| `suche_verfeinern` | gleiches Anliegen genauer oder verwandt suchen |
+| `ergebnis_oeffnen` | Treffer anklicken, lesen, oft Alt+← zurück zur Liste |
+| `im_tab_oeffnen` | 1–2 Treffer per Strg+Klick im Hintergrund-Tab öffnen (später per `tab_wechseln` gelesen) |
+| `suche_abbrechen` | Adresszeile, halbe Anfrage tippen, Esc |
 | `www_com` | Strg+L, bekannter Name (wikipedia, github …), Strg+Enter |
-| `neuer_tab`, `tab_schliessen`, `tab_duplizieren` | Strg+T, Strg+W (nie den letzten Tab), Strg+Shift+K |
-| `tab_wechseln` | Strg+Tab, Strg+Shift+Tab, Strg+Bild↓/↑, Strg+1–8, Strg+9 |
+| `neuer_tab`, `tab_schliessen`, `tab_duplizieren` | Strg+T (meist mit neuer Suche), Strg+W (nie den letzten Tab), Strg+Shift+K |
+| `tab_wechseln` | Lieblingstaste (Strg+Tab, Strg+Bild↓ …), Strg+1–8; vorgemerkte Treffer werden gelesen |
 | `neues_fenster`, `fenster_schliessen` | Strg+N, schließen per Strg+W (max. 2 eigene Fenster) |
 | `zurueck_vor`, `startseite`, `neu_laden` | Alt+←/→, Alt+Home, F5 / Strg+R / Shift+F5 (manchmal sofort Esc) |
-| `lesen_scrollen`, `tastatur_scrollen` | Mausrad mit Lesepausen; Strg+F6, Leertaste, Shift+Leertaste, Bild↓/↑, Home, Ende |
-| `klicken` | Maus gleitet in den Ergebnisbereich, Linksklick |
-| `auf_seite_suchen` | Strg+F / F3, Wort tippen, Enter / Strg+G / F3, Strg+Shift+G, Esc |
-| `zoom`, `vollbild`, `reader`, `caret_browsing` | Strg+Plus/Minus, danach immer Strg+0; F11 hin und zurück; F9 hin und zurück; F7 + Esc |
-| `verlauf`, `downloads`, `favoriten`, `sammlungen`, `seitenleiste_suche` | Strg+H, Strg+J, Strg+Shift+O, Strg+Shift+Y, Strg+Shift+E – danach wieder zu |
-| `favoritenleiste`, `favoritenleiste_fokus` | Strg+Shift+B zweimal; Alt+Shift+B, Pfeile, Esc |
-| `quelltext` | Strg+U, kurz lesen, Strg+W |
-| `stumm`, `vorlesen` | Strg+M zweimal; Strg+Shift+U starten und wieder stoppen |
-| `fokus_bereiche`, `menue`, `kontextmenue` | F6, Shift+F6, Strg+F6, Tab, Shift+Tab; Alt / F10; Shift+F10 – jeweils Esc |
-| `pdf` | Strg+\, Strg+[, Strg+] (wirkt nur in PDFs) |
-| `pause` | 2–10 s nichts tun |
+| `lesen_scrollen`, `tastatur_scrollen` | Scroll-Schübe mit Lesepausen; Strg+F6, Leertaste, Pfeile, Bild↓/↑, Home, Ende |
+| `klicken` | auf einer Seite einem Link folgen |
+| `auf_seite_suchen` | Strg+F, Wort aus der Suche tippen, Enter / Strg+G / F3, Esc |
+| `zoom`, `vollbild`, `reader`, `caret_browsing` | selten: Strg+Plus (danach immer Strg+0); F11 hin und zurück; F9 hin und zurück; F7 + Esc |
+| `verlauf`, `downloads`, `favoriten`, `sammlungen`, `seitenleiste_suche` | selten: Strg+H, Strg+J, Strg+Shift+O, Strg+Shift+Y, Strg+Shift+E – danach wieder zu |
+| `favoritenleiste`, `favoritenleiste_fokus` | selten: Strg+Shift+B zweimal; Alt+Shift+B, Pfeile, Esc |
+| `quelltext` | selten: Strg+U, kurz lesen, Strg+W |
+| `stumm`, `vorlesen` | selten: Strg+M zweimal; Strg+Shift+U starten und wieder stoppen |
+| `fokus_bereiche`, `menue`, `kontextmenue` | selten: F6, Shift+F6, Tab; Alt / F10; Shift+F10 – jeweils Esc |
+| `pdf` | selten: Strg+\, Strg+[, Strg+] (wirkt nur in PDFs) |
+| `pause` | abgelenkt: meist ein paar Sekunden, manchmal bis 45 s |
 
 **Nie verwendet** (fest gesperrt): Alt+F4, Strg+Shift+W, Strg+Shift+Entf, Strg+P, Strg+Shift+P, Strg+S, Strg+O,
 F12, Strg+Shift+I, Alt+Shift+I, Strg+D, Strg+Shift+D, Strg+Shift+V, Strg+Shift+L (Zwischenablage),

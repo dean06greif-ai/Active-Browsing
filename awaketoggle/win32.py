@@ -553,13 +553,22 @@ class Desktop:
         nx, ny = ((x - vx) * 65535) // vw, ((y - vy) * 65535) // vh
         self.send(_mouse_flags(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, nx, ny))
 
-    def click(self) -> None:
+    def click(self, ctrl: bool = False) -> None:
+        """Linksklick mit menschlicher Haltedauer; mit ctrl=True als Strg+Klick (Link im Hintergrund-Tab)."""
         swapped = user32.GetSystemMetrics(SM_SWAPBUTTON)
         down, up = (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP) if swapped else (MOUSEEVENTF_LEFTDOWN,
                                                                                  MOUSEEVENTF_LEFTUP)
-        self.send(_mouse_flags(down))
-        time.sleep(0.06)
-        self.send(_mouse_flags(up))
+        if ctrl:
+            self.send(_vk_input(0x11, False))
+            time.sleep(0.08)
+        try:
+            self.send(_mouse_flags(down))
+            time.sleep(0.05 + 0.07 * (time.perf_counter_ns() % 1000) / 1000)
+            self.send(_mouse_flags(up))
+        finally:
+            if ctrl:
+                time.sleep(0.06)
+                self.send(_vk_input(0x11, True))
 
     def wheel(self, delta: int) -> None:
         self.send(_wheel(delta))

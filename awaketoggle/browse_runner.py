@@ -293,11 +293,30 @@ class Runner:
         y = top + bar + fy * max(bottom - top - bar - 12 * scale, 1)
         self._glide(x, y)
 
-    def _glide(self, x, y) -> None:
+    def _do_nudge(self):
+        """Maus beim Lesen ein Stück weiterbewegen (bleibt im eigenen Fenster)."""
+        d, h = self.desk, self._target()
+        left, top, right, bottom = d.window_rect(h)
+        x0, y0 = d.cursor()
+        x = min(max(x0 + self._rng.uniform(-90, 90), left + 20), right - 20)
+        y = min(max(y0 + self._rng.uniform(-60, 60), top + TOOLBAR_PX), bottom - 20)
+        self._glide(x, y, overshoot=False)
+
+    def _glide(self, x, y, overshoot=True) -> None:
+        """Bogenförmige Bewegung mit Beschleunigen/Abbremsen; manchmal leicht übers Ziel und zurück."""
+        if overshoot and self._rng.random() < 0.3:
+            ox, oy = x + self._rng.uniform(-14, 14), y + self._rng.uniform(-8, 8)
+            self._path(ox, oy, self._rng.randint(12, 26))
+            self._sleep(self._rng.uniform(0.05, 0.18))
+            self._path(x, y, self._rng.randint(3, 6))
+        else:
+            self._path(x, y, self._rng.randint(12, 28))
+
+    def _path(self, x, y, n) -> None:
         x0, y0 = self.desk.cursor()
-        cx = (x0 + x) / 2 + self._rng.uniform(-80, 80)
-        cy = (y0 + y) / 2 + self._rng.uniform(-80, 80)
-        n = self._rng.randint(12, 28)
+        bend = min(80, max(abs(x - x0), abs(y - y0)) / 3)
+        cx = (x0 + x) / 2 + self._rng.uniform(-bend, bend)
+        cy = (y0 + y) / 2 + self._rng.uniform(-bend, bend)
         for i in range(1, n + 1):
             t = i / n
             e = t * t * (3 - 2 * t)
@@ -307,11 +326,13 @@ class Runner:
             self._mark()
             self._sleep(self._rng.uniform(0.006, 0.016))
 
-    def _do_click(self, timeout):
+    def _do_click(self, timeout, ctrl=False):
         before = self.desk.title(self._target())
         self._last_click = self._clock()
-        self.desk.click()
+        self.desk.click(ctrl)
         self._mark()
+        if ctrl:
+            return
         took = self._await_title(before, min(timeout, 6.0))
         if took is not None and took > SLOW_LOAD_S:
             self._problem(f"Langsam nach Klick: {took:.1f} s")

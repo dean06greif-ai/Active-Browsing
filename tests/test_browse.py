@@ -39,7 +39,7 @@ class FakeDesk:
 
     def last_input_tick(self):
         if self.user_input_at is not None and self.ms >= self.user_input_at:
-            self.last = max(self.last, self.user_input_at)
+            self.last = max(self.last, self.ms)  # Sie bewegen ab jetzt laufend die Maus
         return self.last & 0xFFFFFFFF
 
     def _input(self):
@@ -108,10 +108,13 @@ class FakeDesk:
         self._input()
         self.pos = (x, y)
 
-    def click(self):
+    def click(self, ctrl=False):
         self._input()
-        self.clicks += 1
         h = self.foreground()
+        if ctrl:
+            self.wins[h]["tabs"] += 1
+            return
+        self.clicks += 1
         self.wins[h]["title"] = f"Seite {self.ms}"
         if self.popup_every and self.clicks % self.popup_every == 0:
             self._open(title="Popup", proc=self.wins[h]["proc"])
@@ -200,7 +203,7 @@ def test_scenario_tab_model_stays_in_bounds():
                     tabs.append(1)
                 elif s[0] == "close_window":
                     tabs.pop()
-                elif s[0] == "key" and s[1] in ("ctrl+t", "ctrl+shift+k"):
+                elif (s[0] == "key" and s[1] in ("ctrl+t", "ctrl+shift+k")) or (s[0] == "click" and s[2]):
                     tabs[-1] += 1
                 elif s[0] == "key" and s[1] == "ctrl+w" and name != "quelltext":
                     tabs[-1] -= 1
@@ -318,8 +321,8 @@ def test_queries_variety():
     rng = random.Random(4)
     qs = [queries.make_query(rng) for _ in range(500)]
     assert all(q.strip() for q in qs)
-    assert len(set(qs)) > 400
-    assert sum(q.isdigit() for q in qs) > 20
+    assert len(set(qs)) > 250
+    assert sum(any(c.isdigit() for c in q) for q in qs) > 60
     assert queries.typo("wetter berlin", random.Random(1)) != "wetter berlin"
 
 
@@ -526,7 +529,7 @@ def test_runner_custom_private_words():
 
 
 def test_runner_never_touches_foreign_window_that_appears_without_click():
-    cfg = Config(signal="browse", browse_exclude=("klicken",))
+    cfg = Config(signal="browse", browse_exclude=("klicken", "ergebnis_oeffnen", "im_tab_oeffnen"))
     for seed in range(30):
         desk = FakeDesk()
         runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(seed))
@@ -567,3 +570,30 @@ def test_config_drops_removed_action_ids_and_reads_private_words(tmp_path):
                              "browse_private_words": [" (Geheim) "]}), "utf-8")
     cfg, warnings = load(p)
     assert warnings == [] and cfg.browse_exclude == ("zoom",) and cfg.browse_private_words == ("(geheim)",)
+
+
+def test_sessions_look_human():
+    from awaketoggle.browse import RARE, MAX_RARE
+    from awaketoggle.queries import Interest
+    tot = rare = 0
+    for seed in range(300):
+        plan = make_scenario(Config(signal="browse"), random.Random(seed))
+        names = [n for n, _ in plan.steps[1:-1]]
+        assert sum(n in RARE for n in names) <= MAX_RARE
+        if "suche_verfeinern" in names:
+            assert names.index("suche_verfeinern") > min(names.index(n) for n in ("suche", "neuer_tab") if n in names)
+        tot += len(names)
+        rare += sum(n in RARE for n in names)
+    assert rare / tot < 0.1
+    it = Interest(random.Random(3), "wetter")
+    first, refined = it.first(), it.next()
+    assert "wetter" in first and refined != first
+
+
+def test_typing_rhythm_is_irregular():
+    from awaketoggle.browse import Builder
+    b = Builder(random.Random(1), "normal")
+    b.type("wetter berlin morgen")
+    delays = b.steps[0][2]
+    assert max(delays) > 2 * min(delays)
+    assert len(set(delays)) > len(delays) * 0.8
