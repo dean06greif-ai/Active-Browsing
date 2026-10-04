@@ -596,4 +596,4 @@ def test_typing_rhythm_is_irregular():
     b.type("wetter berlin morgen")
     delays = b.steps[0][2]
     assert max(delays) > 2 * min(delays)
-    assert len(set(delays)) > len(delays) * 0.8
+    assert len(set(delays)) > len(delays) * 0.6

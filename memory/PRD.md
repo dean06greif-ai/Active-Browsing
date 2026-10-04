@@ -17,6 +17,11 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - Weg-Modus (away.py + power_win.py): bei Arbeit Helligkeit 0 % (WMI + DDC/CI), Energiesparmodus (ESBATTTHRESHOLD 100) + Overlay beste Effizienz; bei Rückkehr (Watcher 0,3 s) 50 % + vorheriger Zustand; Recovery via away_state.json
 - Config: away_power, away_brightness, back_brightness, away_energy_saver; 79 Tests grün
 
+## Umgesetzt v1.4.0 (2026-06) – menschliches Surfen
+- queries.Interest: ~20 Themen mit Start/Verfeinerung/verwandten Fragen (roter Faden), realistische Zahlen, 12 % Tippfehler
+- browse.py: Person (Lieblingstasten, Neugier, Lesedauer), Seitenzustand leer/ergebnisse/seite, ergebnis_oeffnen, im_tab_oeffnen (Strg+Klick) + Lesen im Tab, suche_verfeinern; log-normal Pausen; Tipprhythmus + spät bemerkte Vertipper; seltene Funktionen max 2/Durchlauf, nie zuerst
+- Runner: Maus-Bogen mit Überschießen, nudge beim Lesen, Strg+Klick; 88 Tests grün
+
 ## Backlog
 - P1 Echter Lauf mit Power Browser, Inkognito-Titel prüfen (--selftest)
 - P2 Live-Status im Tooltip, CSV-Bericht, eigene Wortliste

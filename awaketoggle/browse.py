@@ -67,9 +67,9 @@ VK = {
 
 
 STYLES = {  # Wartezeit-Faktor, mittlerer Tippabstand (s), Rate bemerkter Vertipper
-    "ruhig": (1.5, 0.21, 0.025),
-    "normal": (1.0, 0.14, 0.04),
-    "hektisch": (0.6, 0.09, 0.07),
+    "ruhig": (1.5, 0.21, 0.012),
+    "normal": (1.0, 0.14, 0.022),
+    "hektisch": (0.6, 0.09, 0.04),
 }
 SEARCH_KEYS = ("ctrl+l", "ctrl+e", "alt+d", "ctrl+k", "f4")
 TAB_KEYS = ("ctrl+tab", "ctrl+pgdn", "ctrl+shift+tab", "ctrl+pgup")
@@ -118,6 +118,7 @@ class Model:
     interest: object = None
     person: Person = None
     used: set = field(default_factory=set)
+    unread_searches: int = 0  # Suchen hintereinander, ohne etwas gelesen zu haben
 
     @property
     def w(self) -> Win:
@@ -173,7 +174,7 @@ class Builder:
                     delays.append(self._char_delay(w, prev))
                     prev = w
                 out += ["\b"] * len(wrong)
-                delays += [self.rng.uniform(0.35, 0.8)] + [self.rng.uniform(0.07, 0.16)] * (len(wrong) - 1)
+                delays += [self.rng.uniform(0.35, 0.8)] + [self.rng.uniform(0.07, 0.16) for _ in wrong[1:]]
             out.append(ch)
             delays.append(self._char_delay(ch, prev))
             prev, i = ch, i + 1
@@ -207,6 +208,7 @@ class Builder:
 
 def _read(b, m, rng, lines=(2, 7)):
     """Lesen: Scroll-Schübe (mehrere kurze Raddrehungen), Lesepausen, mal zurückscrollen, Maus wandert mit."""
+    m.unread_searches = 0
     b.point((0.15, 0.7), (0.25, 0.75))
     b.dwell(1.2 * m.person.reader, 0.4)
     for _ in range(rng.randint(*lines)):
@@ -238,6 +240,7 @@ def _searched(b, m, rng, q, label):
     b.dwell(1.5, 0.4)
     m.w.page, m.last_query = "ergebnisse", q
     m.w.history += 1
+    m.unread_searches += 1
     if rng.random() < 0.6:  # Ergebnisliste überfliegen
         b.point((0.1, 0.5), (0.2, 0.7))
         for _ in range(rng.randint(1, 3)):
@@ -525,7 +528,7 @@ def _page(m):
 
 
 def _can_refine(m):
-    return m.interest is not None and not m.interest.exhausted and m.w.loaded
+    return m.interest is not None and not m.interest.exhausted and m.w.loaded and m.unread_searches < 2
 
 
 ACTIONS = {
@@ -547,7 +550,7 @@ ACTIONS = {
     "suche_abbrechen": (lambda m: 0.2, _search_cancel),
     "neu_laden": (lambda m: 0.2 if m.w.loaded else 0, _reload),
     "www_com": (lambda m: 0.25, _www_com),
-    "neues_fenster": (lambda m: 0.12 if len(m.wins) < MAX_WINDOWS else 0, _new_window),
+    "neues_fenster": (lambda m: 0.12 if len(m.wins) < MAX_WINDOWS and m.last_query else 0, _new_window),
     "fenster_schliessen": (lambda m: 0.4 + m.w.tabs * 0.1 if len(m.wins) > 1 else 0, _close_window),
     # Selten (höchstens einmal je Durchlauf)
     "zoom": (lambda m: 0.15 if m.w.loaded else 0, _zoom),
@@ -589,7 +592,8 @@ def make_scenario(cfg, rng: random.Random) -> Plan:
     for _ in range(n):
         ids, weights = [], []
         for aid, (weight, _) in ACTIONS.items():
-            if aid in exclude or (aid in RARE and (aid in m.used or len(m.used & RARE) >= MAX_RARE)):
+            if aid in exclude or (aid in RARE and (not m.last_query or aid in m.used
+                                                   or len(m.used & RARE) >= MAX_RARE)):
                 continue
             w = weight(m)
             if w > 0:

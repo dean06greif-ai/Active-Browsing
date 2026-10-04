@@ -1,0 +1,54 @@
+{
+  "summary": "Static review + 7 new adversarial tests for the 'natural, human-like browsing' refactor (queries.Interest, Builder.type with delayed-noticed typos, make_scenario state model, _do_nudge/_glide/_do_click(ctrl) in the runner). Full pytest run: 88/88 green (81 pre-existing + 7 new in tests/test_browse_human.py). Sampled 20 scenarios; preconditions were enforced for 1000 seeds without a single impossible sequence (no refine-without-search, no tab-switch with 1 tab, no reading on empty tab, no result-open outside result page). Found no critical bugs. Three minor human-likeness nits worth noting.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "awaketoggle.browse.make_scenario (rare-first opening)",
+        "issue": "A rare action can be the very first user action in a session (seeds 0, 4, 17 in the 0..19 sample start with 'fokus_bereiche', 'seitenleiste_suche', or 'neues_fenster' before any search). A real person usually interacts with content before poking the F6 focus ring or sidebar. Low priority: individually plausible, just slightly less typical. Consider down-weighting rare actions while m.last_query == '' (i.e. no interest yet)."
+      },
+      {
+        "endpoint": "awaketoggle.browse.make_scenario (long refinement chains)",
+        "issue": "With the REPEAT_OK penalty of 0.6 applied only to the immediately previous action, chains like 'suche, suche_verfeinern, suche_verfeinern, suche_verfeinern, suche_verfeinern' can still appear (seed 3). Interest.exhausted caps this at 4 total searches per Interest, so bounded, but 4 consecutive refinements with no reading in between is slightly robotic. Consider a stronger run-length penalty (e.g. 0.6**run_len) or require at least one 'lesen_scrollen'/'ergebnis_oeffnen' between refinements after the second."
+      },
+      {
+        "endpoint": "awaketoggle.queries.Interest.next (refining a related jump)",
+        "issue": "When Interest.next() picks a 'related' question (e.g. 'wie lange hält gekochter reis'), the NEXT call may refine THAT question with the current theme's refinement templates ('{q} chefkoch', '{q} vegetarisch'), producing semantically odd combos like 'wie lange hält gekochter reis chefkoch vegetarisch'. Doesn't crash, humans do search weirdly, but if you want to tighten naturalness consider resetting the refinement anchor whenever next() returned a 'related' question (store the last 'base' and treat the related jump as a fresh start)."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_browse_human.py",
+    "/app/tests/test_browse_adversarial.py",
+    "/app/tests/test_away_adversarial.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: down-weight RARE actions when m.last_query == '' so a session starts with content, not with poking F6/sidebar/menu.",
+    "Optional: strengthen the repeat penalty for 'suche_verfeinern' past 2 in a row, or inject a mandatory read/scroll between refinements.",
+    "Optional: when Interest.next() picked a 'related' question, treat it as a new base so the next refinement does not keep appending to the previous related-topic string."
+  ],
+  "critical_code_review_comments": [
+    "Builder.type correctly maintains the backspace invariant: for 900 seed/style combinations, applying every '\\b' in the emitted stream yielded exactly the intended text. Delay vector length always matches character count.",
+    "The 'noticed typo' effect is real: across 500 seeds the first backspace after an inserted typo exceeds 0.3s (vs. ~0.07-0.16s for the following corrections), which models human reaction time well.",
+    "ACTIONS weight functions encode preconditions directly (_results/_page/_can_refine, tab/window bounds, len(m.used & RARE) < MAX_RARE); a brute-force simulation of 1000 seeds found zero violations of 'suche_verfeinern' needing a prior search, 'tab_wechseln' with 1 tab, 'lesen_scrollen' on an empty tab, 'ergebnis_oeffnen' outside result page, or 'fenster_schliessen' without a prior new_window. MAX_RARE=2 is honored on every run.",
+    "queries.THEMES: all starts/refines/related templates fill without KeyError and never leave an unfilled '{...}' placeholder (checked across every template x 25 seeds). _fill supplies q/c/c2/t/t2/y/y2/n/n2/a/b/p/plz consistently.",
+    "Interest.next dedupes words via dict.fromkeys and retries up to 5 times to avoid duplicating the previous query; adjacent-duplicate rate < 1% across 500x3 draws.",
+    "browse_runner._do_nudge keeps the cursor inside the current _target() window via rect clamping (left+20, right-20, top+TOOLBAR_PX, bottom-20); _glide/_path operate on absolute coordinates already clamped by _do_nudge and _do_point, so cursor cannot wander onto a foreign window.",
+    "browse_runner._do_click(ctrl=True) correctly skips the _await_title/popup check (ctrl+click opens a background tab, not a navigation of the current tab). It still sets self._last_click, so if a page somehow pops a real window immediately after a ctrl-click, _own_popup will detect it and _close_top() will close it.",
+    "win32.Desktop.click(ctrl=True) releases ctrl in a finally block, so an exception during the mouse-down/up pair cannot leave Ctrl stuck pressed. The up event is still sent via self.send() after a 60ms delay (reasonable).",
+    "_do_new_window still enforces the iteration-1 hardening: snapshots top_windows BEFORE sending ctrl+n, waits for settle, verifies exactly ONE new app-window of the target process is in the delta and is foreground; otherwise aborts without touching anything. Combined with _reject_private and _own_popup it preserves the 'never touch foreign windows / never Inkognito' invariant.",
+    "No input is ever sent to the USER window after the initial ctrl+n: _send() guards 'kein eigenes Testfenster mehr offen' when _opened and _stack is empty, and _ensure_focus() aborts rather than typing/clicking anywhere else. Verified by test_user_window_only_ever_receives_ctrl_n_across_many_seeds (pre-existing adversarial)."
+  ],
+  "updated_files": [
+    "/app/tests/test_browse_human.py (new; 7 tests)"
+  ],
+  "success_rate": {"backend": "100% (88/88)", "frontend": "n/a"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full suite now 88 tests. tests/test_browse_human.py covers the four review-request pillars: Interest template integrity, Interest sequence sanity, Builder.type backspace invariant + delayed-noticed-typo delay profile, and brute-force precondition enforcement across 1000 scenarios. Safety invariants (foreign window, Inkognito, same-process popup, ctrl-release-on-exception) remain green via tests/test_browse_adversarial.py and win32.click's finally. No Windows host available; power_win and installieren.ps1 remain statically reviewed only.",
+  "rca of the issue": "No reproducible bug this iteration. Minor nits (rare-first opening, long refine chains, related-then-refine awkward joins) are quality-of-feel issues, not correctness bugs. All 1000-seed state simulations respected every weighting precondition; Builder.type's backspace invariant held across 900 seed/style combinations."
+}

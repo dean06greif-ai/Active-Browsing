@@ -148,20 +148,22 @@ class Interest:
         self.theme = theme or rng.choices(tuple(THEME_WEIGHTS), tuple(THEME_WEIGHTS.values()))[0]
         self.city = rng.choice(CITIES)
         self.query = ""
+        self.anchor = ""  # Bezug für Verfeinerungen; verwandte Sprünge ändern ihn nicht
         self.searches = 0
 
     def first(self) -> str:
         starts = THEMES[self.theme][0]
-        self.query = _fill(self.rng.choice(starts), self.rng, city=self.city)
+        self.query = self.anchor = _fill(self.rng.choice(starts), self.rng, city=self.city)
         self.searches = 1
         return _humanize(self.query, self.rng)
 
     def next(self) -> str:
         """Verfeinern (meist) oder zu einer verwandten Frage springen."""
         _, refines, related = THEMES[self.theme]
-        base = self.query.split(" = ")[0]
+        base = self.anchor.split(" = ")[0]
         for _ in range(5):
-            if self.rng.random() < 0.65 and len(base) < 45:
+            refine = self.rng.random() < 0.65 and len(base) < 45
+            if refine:
                 q = _fill(self.rng.choice(refines), self.rng, q=base, city=self.city)
             else:
                 q = _fill(self.rng.choice(related), self.rng, city=self.city)
@@ -169,6 +171,8 @@ class Interest:
             if q != self.query:
                 break
         self.query = q
+        if refine:
+            self.anchor = q
         self.searches += 1
         return _humanize(self.query, self.rng)
 
