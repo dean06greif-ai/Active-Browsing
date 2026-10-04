@@ -33,6 +33,7 @@ class Config:
     browse_actions_max: int = 20
     browse_exclude: tuple = ()
     browse_private_words: tuple = ()
+    browse_accept_cookies: bool = True
     badge_read: bool = True
     badge_extension: str = ""
     away_power: bool = True
@@ -76,7 +77,8 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         th = d.timer_hours
     values["timer_hours"] = _num(th)
 
-    for key in ("start_active", "verbose_log", "badge_read", "away_power", "away_energy_saver"):
+    for key in ("start_active", "verbose_log", "badge_read", "away_power", "away_energy_saver",
+                "browse_accept_cookies"):
         v = raw.get(key, getattr(d, key))
         if not isinstance(v, bool):
             warnings.append(f"{key}={v!r} ungültig (true oder false), nutze {getattr(d, key)}")

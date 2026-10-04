@@ -167,6 +167,10 @@ class TrayApp:
             Item("Erweiterungs-Zähler vorher/nachher lesen",
                  lambda: self._change(badge_read=not self._cfg().badge_read),
                  checked=lambda i: self._cfg().badge_read, enabled=lambda i: self._cfg().signal == "browse"),
+            Item("Cookie-/Datenschutz-Hinweise automatisch akzeptieren",
+                 lambda: self._change(browse_accept_cookies=not self._cfg().browse_accept_cookies),
+                 checked=lambda i: self._cfg().browse_accept_cookies,
+                 enabled=lambda i: self._cfg().signal == "browse"),
             Item("Browser-Test Länge", Menu(*[self._radio(browse_length_label(n), "browse_actions_max", n)
                                               for n in BROWSE_LENGTH_CHOICES],
                                             self._custom("browse_actions_max", BROWSE_LENGTH_CHOICES,

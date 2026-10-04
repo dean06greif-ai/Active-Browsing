@@ -14,7 +14,7 @@ def test_creates_defaults(tmp_path):
     assert json.loads(p.read_text("utf-8")) == {
         "interval_seconds": 60, "signal": "mouse", "timer_hours": 0, "start_active": False, "verbose_log": False,
         "random_variants": ["mouse", "scroll", "keys"], "jitter_percent": 0,
-        "browse_processes": [], "browse_actions_max": 20, "browse_exclude": [], "browse_private_words": [], "badge_read": True, "badge_extension": "",
+        "browse_processes": [], "browse_actions_max": 20, "browse_exclude": [], "browse_private_words": [], "browse_accept_cookies": True, "badge_read": True, "badge_extension": "",
         "away_power": True, "away_brightness": 0, "back_brightness": 50, "away_energy_saver": True}
 
 

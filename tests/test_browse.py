@@ -21,6 +21,7 @@ class FakeDesk:
         self.next = 100
         self.sent = []
         self.clicks = 0
+        self.accepted = []
         self.popup_every = popup_every
         self.user_input_at = user_input_at_ms
         self.pos = (300, 300)
@@ -70,6 +71,10 @@ class FakeDesk:
         w = self.wins[h]
         return f"{w['title']} - [InPrivate] - Microsoft Edge" if w.get("private") else w["title"]
 
+    def find_consent(self, h):
+        banner = self.wins.get(h, {}).get("banner")
+        return banner and (banner, (300, 500, 460, 540))
+
     def window_rect(self, h):
         return 0, 0, 1600, 900
 
@@ -113,6 +118,13 @@ class FakeDesk:
         h = self.foreground()
         if ctrl:
             self.wins[h]["tabs"] += 1
+            return
+        banner = self.wins[h].get("banner")
+        if banner:
+            x, y = self.pos
+            assert 300 <= x <= 460 and 500 <= y <= 540, ("Klick neben den Button", self.pos)
+            self.wins[h]["banner"] = None
+            self.accepted.append((h, banner))
             return
         self.clicks += 1
         self.wins[h]["title"] = f"Seite {self.ms}"
@@ -597,3 +609,46 @@ def test_typing_rhythm_is_irregular():
     delays = b.steps[0][2]
     assert max(delays) > 2 * min(delays)
     assert len(set(delays)) > len(delays) * 0.6
+
+
+def test_consent_rank():
+    from awaketoggle.consent import accept_rank, best_button
+    assert accept_rank("Alle akzeptieren") == 0 and accept_rank("Accept all cookies") == 0
+    assert accept_rank("ALLEN ZUSTIMMEN") == 0 and accept_rank("Akzeptieren und weiter") == 1
+    assert accept_rank("Zustimmen") == 1 and accept_rank("OK, verstanden") == 2
+    for no in ("Ablehnen", "Alle ablehnen", "Nur notwendige Cookies", "Einstellungen", "Mehr Optionen",
+               "Auswahl speichern", "Weiter ohne Zustimmung", "Benachrichtigungen erlauben", "Datenschutzerklärung",
+               "Reject all", "Manage preferences", "Wetter Berlin", ""):
+        assert accept_rank(no) is None, no
+    best = best_button([("Einstellungen", 1), ("Akzeptieren", 2), ("Alle akzeptieren", 3), ("Ablehnen", 4)])
+    assert best == ("Alle akzeptieren", 3)
+
+
+def test_runner_accepts_cookie_banners_like_a_human():
+    total = 0
+    for seed in range(15):
+        desk = FakeDesk()
+        orig = desk.send_combo
+
+        def nav(vks, desk=desk, orig=orig):
+            orig(vks)
+            fg = desk.foreground()
+            if fg != USER and NAMES[vks[-1]] == "enter":
+                desk.wins[fg]["banner"] = "Alle akzeptieren"
+        desk.send_combo = nav
+        desk.accepted = []
+        runner = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(seed))
+        res = runner.run(make_scenario(Config(signal="browse"), random.Random(seed)), ())
+        assert res.status == "done", (seed, res)
+        assert all(h != USER for h, _ in desk.accepted)
+        assert not desk.wins[USER].get("banner")
+        total += len(desk.accepted)
+    assert total > 10
+
+
+def test_cookie_accept_can_be_switched_off():
+    for seed in range(20):
+        plan = make_scenario(Config(signal="browse", browse_accept_cookies=False), random.Random(seed))
+        assert all(s[0] != "consent" for _, steps in plan.steps for s in steps)
+    plan = make_scenario(Config(signal="browse"), random.Random(1))
+    assert any(s[0] == "consent" for _, steps in plan.steps for s in steps)

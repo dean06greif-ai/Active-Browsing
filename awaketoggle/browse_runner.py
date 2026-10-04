@@ -370,6 +370,32 @@ class Runner:
         self._close_top()
         raise Abort("Inkognito-/InPrivate-Fenster wird nicht benutzt")
 
+    def _do_consent(self):
+        """Cookie-/Datenschutz-Hinweis: kurz bemerken, Maus zum Button, zögern, „Alle akzeptieren“ klicken."""
+        d, h = self.desk, self._target()
+        try:
+            found = d.find_consent(h)
+        except Exception:
+            log.debug("Cookie-Hinweis: Suche fehlgeschlagen", exc_info=True)
+            return
+        if not found:
+            return
+        name, (left, top, right, bottom) = found
+        wl, wt, wr, wb = d.window_rect(h)
+        if not (wl <= left < right <= wr and wt <= top < bottom <= wb):
+            return
+        self._wait(self._rng.uniform(0.6, 2.2))
+        self._check("click")
+        self._glide(left + (right - left) * self._rng.uniform(0.3, 0.7),
+                    top + (bottom - top) * self._rng.uniform(0.35, 0.65))
+        self._wait(self._rng.uniform(0.15, 0.5))
+        self._check("click")
+        self._last_click = self._clock()
+        d.click()
+        self._mark()
+        log.info("Cookie-/Datenschutz-Hinweis akzeptiert: %r", name)
+        self._wait(self._rng.uniform(0.8, 1.6))
+
     def _do_close_window(self):
         self._close_top()
 

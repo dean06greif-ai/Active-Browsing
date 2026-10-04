@@ -126,10 +126,16 @@ class Model:
 
 
 class Builder:
-    def __init__(self, rng: random.Random, style: str):
+    def __init__(self, rng: random.Random, style: str, cookies: bool = True):
         self.rng = rng
         self.speed, self.type_mid, self.slip = STYLES[style]
+        self.cookies = cookies
         self.steps = []
+
+    def consent(self):
+        """Nach dem Laden: Cookie-/Datenschutz-Hinweis wie ein Mensch mit „Alle akzeptieren“ wegklicken."""
+        if self.cookies:
+            self.steps.append(("consent",))
 
     def key(self, c: str, times: int = 1, gap=(0.15, 0.5)):
         combo(c)
@@ -237,6 +243,7 @@ def _type_query(b, m, rng, q):
 
 def _searched(b, m, rng, q, label):
     b.nav("enter", label)
+    b.consent()
     b.dwell(1.5, 0.4)
     m.w.page, m.last_query = "ergebnisse", q
     m.w.history += 1
@@ -265,12 +272,14 @@ def _refine(b, m, rng):
 
 def _open_result(b, m, rng):
     """Ergebnis anklicken: Maus zum Treffer, kurz zögern, klicken, lesen, oft wieder zurück zur Liste."""
+    b.consent()  # verspätet eingeblendete Hinweise zuerst wegklicken
     b.point((0.05, 0.45), (0.12, 0.65))
     b.dwell(0.7, 0.5)
     if rng.random() < 0.3:
         b.nudge()
         b.dwell(0.4, 0.4)
     b.click()
+    b.consent()
     b.dwell(1.2, 0.4)
     m.w.page = "seite"
     m.w.history += 1
@@ -283,6 +292,7 @@ def _open_result(b, m, rng):
 
 def _open_result_tab(b, m, rng):
     """Interessanten Treffer für später im Hintergrund-Tab öffnen (Strg+Klick)."""
+    b.consent()
     for _ in range(rng.choices((1, 2), (3, 1))[0]):
         if m.w.tabs >= MAX_TABS:
             break
@@ -296,9 +306,11 @@ def _open_result_tab(b, m, rng):
 
 def _click_link(b, m, rng):
     """Auf einer Seite einem Link folgen."""
+    b.consent()
     b.point((0.05, 0.7), (0.1, 0.8))
     b.dwell(0.8, 0.5)
     b.click()
+    b.consent()
     b.dwell(1.5, 0.4)
     m.w.history += 1
     m.w.page = "seite"
@@ -324,6 +336,7 @@ def _www_com(b, m, rng):
     word = rng.choice(queries.SAFE_DOMAINS)
     b.type(word)
     b.nav("ctrl+enter", f"www.{word}.com")
+    b.consent()
     b.dwell(2.0, 0.4)
     m.w.page = "seite"
     m.w.history += 1
@@ -360,6 +373,7 @@ def _switch_tab(b, m, rng):
     b.key(key)
     b.dwell(1.0, 0.4)
     if m.w.unread:
+        b.consent()
         m.w.unread -= 1
         m.w.page = "seite"
         m.w.history += 1
@@ -390,7 +404,8 @@ def _back_forward(b, m, rng):
 
 def _home(b, m, rng):
     b.key("alt+home")
-    b.dwell(2.0, 0.4)
+    b.dwell(1.5, 0.4)
+    b.consent()
     m.w.page = "seite"
     m.w.history += 1
 
@@ -584,7 +599,7 @@ REPEAT_OK = frozenset({"lesen_scrollen", "ergebnis_oeffnen", "suche_verfeinern",
 def make_scenario(cfg, rng: random.Random) -> Plan:
     exclude = set(cfg.browse_exclude)
     style = rng.choices(tuple(STYLES), (2, 5, 1.5))[0]
-    b, m = Builder(rng, style), Model(person=Person.random(rng))
+    b, m = Builder(rng, style, cfg.browse_accept_cookies), Model(person=Person.random(rng))
     _new_window(b, m)
     actions = [("start (neues Fenster)", b.take())]
     n = rng.randint(max(3, cfg.browse_actions_max // 3), cfg.browse_actions_max)

@@ -81,6 +81,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
   "browse_actions_max": 20,
   "browse_exclude": [],
   "browse_private_words": [],
+  "browse_accept_cookies": true,
   "away_power": true,
   "away_brightness": 0,
   "back_brightness": 50,
@@ -101,6 +102,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
 | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
 | `badge_read` | `true` / `false` | Zähler (Badge) einer Erweiterung vor und nach jedem Browser-Test lesen |
+| `browse_accept_cookies` | `true` / `false` | Cookie-/Datenschutz-Hinweise automatisch mit „Alle akzeptieren“ wegklicken |
 | `badge_extension` | Text | Teil des Erweiterungsnamens (Tooltip), z. B. `"Rewards"`; leer = erste Erweiterung mit Zahl |
 | `browse_private_words` | Liste von Titelwörtern | **zusätzliche** Wörter, an denen ein Inkognito-Fenster im Fenstertitel erkannt wird (immer erkannt: InPrivate, Incognito, Inkognito, Privater Modus, Private Browsing …). Nötig nur, wenn Ihr Browser ein eigenes Wort nutzt – `--selftest` zeigt alle Browserfenster mit Titel und „normal“/„Inkognito“ |
 | `away_power` | `true` / `false` | Weg-Modus an/aus |
@@ -163,6 +165,12 @@ Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv)
    - **seltene Browserfunktionen** (Zoom, Verlauf, Vollbild, Menü, Quelltext …) höchstens 2 pro Durchlauf und
      jede nur einmal (zusammen unter 10 % aller Aktionen).
    1/3 bis volle `browse_actions_max` Aktionen je Durchlauf.
+   **Cookie-/Datenschutz-Hinweise** (`browse_accept_cookies`, Tray: „Cookie-/Datenschutz-Hinweise automatisch
+   akzeptieren“): Nach jedem Seitenaufruf und vor Klicks sucht der Test per UI Automation im Seiteninhalt des
+   eigenen Fensters nach einem Zustimmungs-Button („Alle akzeptieren“, „Allen zustimmen“, „Accept all“ …,
+   notfalls „Akzeptieren“/„OK“). Wie ein Mensch: Hinweis kurz bemerken (0,6–2 s), Maus im Bogen zum Button,
+   kurz zögern, klicken. Buttons wie „Ablehnen“, „Einstellungen“, „Nur notwendige“, „Benachrichtigungen
+   erlauben“ werden nie gedrückt. Im Protokoll steht „Cookie-/Datenschutz-Hinweis akzeptiert: 'Alle akzeptieren'“.
 4. **Aufräumen:** alle eigenen Fenster mit Strg+W schließen (geprüft über das Fensterhandle), Mauszeiger zurück.
 
 Suchanfragen: rund 20 Themen (Wetter, Rezepte, Fußball, Bahn, Urlaub, Technik, Finanzen, Gesundheit, Haushalt,

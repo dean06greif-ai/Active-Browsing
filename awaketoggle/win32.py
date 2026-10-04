@@ -498,6 +498,10 @@ class Desktop:
         left, top, right, bottom = self.window_rect(h)
         return right - left > 200 and bottom - top > 200 or bool(user32.IsIconic(h))
 
+    def find_consent(self, h: int):
+        from .consent_win import find_accept_button
+        return find_accept_button(h)
+
     def find_browser(self, names, skip=lambda h: False) -> int:
         """Oberstes Browserfenster (Z-Reihenfolge), übersprungene (Inkognito) nie; sonst oberstes Programmfenster.
 
