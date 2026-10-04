@@ -392,3 +392,60 @@ def test_runner_reads_badge_before_and_after():
     assert res.status == "done"
     assert "Zähler 698 → 698" in res.text
     assert any("nicht gestiegen" in p for p in res.problems)
+
+
+def test_badge_win_generates_comtypes_module_before_import(monkeypatch):
+    import sys
+    import types
+    from awaketoggle import badge_win
+
+    calls = []
+    rect = types.SimpleNamespace(left=0, top=0, right=40, bottom=40)
+
+    class El:
+        CurrentBoundingRectangle = rect
+        CurrentName, CurrentHelpText, CurrentClassName = "Rewards 698", "", "ToolbarActionView"
+
+    class Found:
+        Length = 1
+
+        def GetElement(self, i):
+            return El()
+
+    class Uia:
+        def ElementFromHandle(self, h):
+            return types.SimpleNamespace(CurrentBoundingRectangle=rect, FindAll=lambda scope, cond: Found())
+
+        def CreatePropertyCondition(self, *a):
+            return a
+
+        def CreateOrCondition(self, *a):
+            return a
+
+    def get_module(name):
+        calls.append(name)
+        gen = types.ModuleType("comtypes.gen")
+        uac = types.ModuleType("comtypes.gen.UIAutomationClient")
+        for k in ("CUIAutomation", "IUIAutomation", "TreeScope_Descendants", "UIA_ButtonControlTypeId",
+                  "UIA_ControlTypePropertyId", "UIA_MenuItemControlTypeId"):
+            setattr(uac, k, 1)
+        gen.UIAutomationClient = uac
+        sys.modules["comtypes.gen"], sys.modules["comtypes.gen.UIAutomationClient"] = gen, uac
+
+    comtypes = types.ModuleType("comtypes")
+    comtypes.COINIT_MULTITHREADED = 0
+    comtypes.CoInitializeEx = lambda flags: None
+    client = types.ModuleType("comtypes.client")
+    client.GetModule = get_module
+    client.CreateObject = lambda cls, interface=None: Uia()
+    comtypes.client = client
+    for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
+        monkeypatch.delitem(sys.modules, k, raising=False)
+    monkeypatch.setitem(sys.modules, "comtypes", comtypes)
+    monkeypatch.setitem(sys.modules, "comtypes.client", client)
+    monkeypatch.setattr(badge_win, "_uia", None)
+
+    assert badge_win.read_badge(1) == 698
+    assert calls == ["UIAutomationCore.dll"]
+    for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
+        sys.modules.pop(k, None)

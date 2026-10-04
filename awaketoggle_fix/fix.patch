@@ -81,7 +81,7 @@ index 0000000..4fce2a9
 +    return text, None
 diff --git a/awaketoggle/badge_win.py b/awaketoggle/badge_win.py
 new file mode 100644
-index 0000000..b53381f
+index 0000000..76d3a08
 --- /dev/null
 +++ b/awaketoggle/badge_win.py
 @@ -0,0 +1,113 @@
@@ -133,9 +133,9 @@ index 0000000..b53381f
 +
 +def toolbar_buttons(hwnd: int) -> list:
 +    """Buttons oben im Browserfenster: [(Name, Hilfetext, Klasse, (l, t, r, b))]."""
++    uia = _automation()
 +    from comtypes.gen.UIAutomationClient import (TreeScope_Descendants, UIA_ButtonControlTypeId,
 +                                                 UIA_ControlTypePropertyId, UIA_MenuItemControlTypeId)
-+    uia = _automation()
 +    root = uia.ElementFromHandle(hwnd)
 +    top = root.CurrentBoundingRectangle.top
 +    cond = uia.CreateOrCondition(uia.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_ButtonControlTypeId),
@@ -583,7 +583,7 @@ index 61a733d..d3ff12d 100644
  Pillow>=11.0,<13
 +comtypes>=1.4; sys_platform == "win32"
 diff --git a/tests/test_browse.py b/tests/test_browse.py
-index 92679a2..e90c6dd 100644
+index 92679a2..b34fa9a 100644
 --- a/tests/test_browse.py
 +++ b/tests/test_browse.py
 @@ -1,7 +1,7 @@
@@ -595,7 +595,7 @@ index 92679a2..e90c6dd 100644
  from awaketoggle.browse_runner import Runner
  from awaketoggle.config import Config
  from tests.test_core import make
-@@ -355,3 +355,40 @@ def test_config_browse_keys(tmp_path):
+@@ -355,3 +355,97 @@ def test_config_browse_keys(tmp_path):
      cfg, warnings = load(p)
      assert len(warnings) == 3 and cfg == Config()
      assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}
@@ -636,6 +636,63 @@ index 92679a2..e90c6dd 100644
 +    assert res.status == "done"
 +    assert "Zähler 698 → 698" in res.text
 +    assert any("nicht gestiegen" in p for p in res.problems)
++
++
++def test_badge_win_generates_comtypes_module_before_import(monkeypatch):
++    import sys
++    import types
++    from awaketoggle import badge_win
++
++    calls = []
++    rect = types.SimpleNamespace(left=0, top=0, right=40, bottom=40)
++
++    class El:
++        CurrentBoundingRectangle = rect
++        CurrentName, CurrentHelpText, CurrentClassName = "Rewards 698", "", "ToolbarActionView"
++
++    class Found:
++        Length = 1
++
++        def GetElement(self, i):
++            return El()
++
++    class Uia:
++        def ElementFromHandle(self, h):
++            return types.SimpleNamespace(CurrentBoundingRectangle=rect, FindAll=lambda scope, cond: Found())
++
++        def CreatePropertyCondition(self, *a):
++            return a
++
++        def CreateOrCondition(self, *a):
++            return a
++
++    def get_module(name):
++        calls.append(name)
++        gen = types.ModuleType("comtypes.gen")
++        uac = types.ModuleType("comtypes.gen.UIAutomationClient")
++        for k in ("CUIAutomation", "IUIAutomation", "TreeScope_Descendants", "UIA_ButtonControlTypeId",
++                  "UIA_ControlTypePropertyId", "UIA_MenuItemControlTypeId"):
++            setattr(uac, k, 1)
++        gen.UIAutomationClient = uac
++        sys.modules["comtypes.gen"], sys.modules["comtypes.gen.UIAutomationClient"] = gen, uac
++
++    comtypes = types.ModuleType("comtypes")
++    comtypes.COINIT_MULTITHREADED = 0
++    comtypes.CoInitializeEx = lambda flags: None
++    client = types.ModuleType("comtypes.client")
++    client.GetModule = get_module
++    client.CreateObject = lambda cls, interface=None: Uia()
++    comtypes.client = client
++    for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
++        monkeypatch.delitem(sys.modules, k, raising=False)
++    monkeypatch.setitem(sys.modules, "comtypes", comtypes)
++    monkeypatch.setitem(sys.modules, "comtypes.client", client)
++    monkeypatch.setattr(badge_win, "_uia", None)
++
++    assert badge_win.read_badge(1) == 698
++    assert calls == ["UIAutomationCore.dll"]
++    for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
++        sys.modules.pop(k, None)
 diff --git a/tests/test_config.py b/tests/test_config.py
 index 798b525..e1d456f 100644
 --- a/tests/test_config.py

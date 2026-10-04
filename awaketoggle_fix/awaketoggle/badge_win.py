@@ -46,9 +46,9 @@ def _automation():
 
 def toolbar_buttons(hwnd: int) -> list:
     """Buttons oben im Browserfenster: [(Name, Hilfetext, Klasse, (l, t, r, b))]."""
+    uia = _automation()
     from comtypes.gen.UIAutomationClient import (TreeScope_Descendants, UIA_ButtonControlTypeId,
                                                  UIA_ControlTypePropertyId, UIA_MenuItemControlTypeId)
-    uia = _automation()
     root = uia.ElementFromHandle(hwnd)
     top = root.CurrentBoundingRectangle.top
     cond = uia.CreateOrCondition(uia.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_ButtonControlTypeId),
