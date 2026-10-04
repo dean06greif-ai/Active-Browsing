@@ -56,7 +56,9 @@ Write-Host "4/4 Verknüpfungen auf Desktop und im Startmenü anlegen ..." -Foreg
 foreach ($l in $links) { New-Link $l $target $arguments $workdir $icon }
 if (Test-Path $startupLink) { New-Link $startupLink $target $arguments $workdir $icon; Write-Host "   Autostart-Verknüpfung aktualisiert" }
 
-Start-Process -FilePath $target -ArgumentList $arguments -WorkingDirectory $workdir
+$startArgs = @{ FilePath = $target; WorkingDirectory = $workdir }
+if ($arguments) { $startArgs.ArgumentList = $arguments }
+Start-Process @startArgs
 Write-Host ""
 Write-Host "Fertig. AwakeToggle läuft jetzt im Infobereich (Pfeil ^ unten rechts in der Taskleiste)." -ForegroundColor Green
 Write-Host "Starten künftig per Desktop-Symbol 'AwakeToggle' oder Startmenü - VS Code/Terminal wird nicht gebraucht."
