@@ -1,0 +1,292 @@
+"""Führt einen Browser-Test-Plan aus: nur in eigenen Fenstern, Abbruch sobald Sie selbst etwas tun."""
+import logging
+import random
+import time
+from dataclasses import dataclass, field
+
+from .browse import BrowserNames, combo
+
+log = logging.getLogger(__name__)
+
+MASK = 0xFFFFFFFF
+OWN_SLACK_MS = 400
+POLL_S = 0.1
+NEW_WINDOW_TIMEOUT_S = 6.0
+CLOSE_TRIES = 30
+SLOW_LOAD_S = 5.0
+TOOLBAR_PX = 150
+
+
+@dataclass
+class Result:
+    status: str  # done | aborted | skipped
+    text: str
+    actions: int = 0
+    problems: list = field(default_factory=list)
+
+
+class Abort(Exception):
+    pass
+
+
+class Runner:
+    def __init__(self, desk, sleep=time.sleep, clock=time.monotonic, rng=None):
+        self.desk = desk
+        self._sleep = sleep
+        self._clock = clock
+        self._rng = rng or random.Random()
+        self.leftover = []
+
+    # ---------- Ablauf ----------
+
+    def run(self, plan, processes, cancel=lambda: False, verbose=False) -> Result:
+        d = self.desk
+        processes = BrowserNames(processes)
+        fg = self._bring_browser_to_front(processes)
+        if isinstance(fg, Result):
+            return fg
+        processes = BrowserNames(tuple(processes.extra) + (d.process_name(fg),))
+        self._processes, self._cancel, self._base = processes, cancel, fg
+        self._problems, self._stack, self._opened = [], [], False
+        self._mark()
+        self._cleanup_leftover()
+        self._known = d.top_windows()
+        cursor = d.cursor()
+        start, done = self._clock(), 0
+        level = logging.INFO if verbose else logging.DEBUG
+        try:
+            for name, steps in plan.steps:
+                log.log(level, "Browser-Test: %s", name)
+                for step in steps:
+                    self._check()
+                    getattr(self, "_do_" + step[0])(*step[1:])
+                done += 1
+        except Abort as e:
+            self.leftover = list(self._stack)
+            if self._stack:
+                log.warning("Browser-Test abgebrochen (%s), %d eigene(s) Fenster bleibt offen", e, len(self._stack))
+            else:
+                log.info("Browser-Test abgebrochen (%s)", e)
+            return Result("aborted", str(e), done, self._problems)
+        d.move_to(*cursor)
+        self._mark()
+        text = f"{max(done - 2, 0)} Aktionen in {self._clock() - start:.0f} s"
+        if self._problems:
+            text += f", {len(self._problems)} Auffälligkeit(en)"
+        return Result("done", text, done, self._problems)
+
+    def _bring_browser_to_front(self, processes):
+        d = self.desk
+        fg = d.root(d.foreground())
+        proc = d.process_name(fg) if fg else ""
+        if fg and proc in processes:
+            return fg
+        h = d.find_browser(processes)
+        if h and d.process_name(h) not in processes:
+            log.info("Kein bekannter Browser, nehme oberstes Fenster: %s", d.process_name(h))
+        if not h:
+            return Result("skipped", f"kein Browserfenster gefunden (vorne: {proc or '-'}) – "
+                                     "Programmname in browse_processes eintragen")
+        if not d.activate(h):
+            return Result("skipped", f"Browser ließ sich nicht nach vorne holen (vorne: {proc or '-'})")
+        self._sleep(0.5)
+        if d.root(d.foreground()) != h:
+            return Result("skipped", f"Browser ließ sich nicht nach vorne holen (vorne: {proc or '-'})")
+        log.info("Browserfenster (%s) nach vorne geholt, vorher vorne: %s", d.process_name(h), proc or "-")
+        return h
+
+    def _cleanup_leftover(self) -> None:
+        old, self.leftover = [h for h in self.leftover if self.desk.is_window(h)], []
+        for h in reversed(old):
+            self._stack = [h]
+            try:
+                self._close_top()
+                log.info("Übrig gebliebenes Testfenster geschlossen")
+            except Abort as e:
+                log.info("Übrig gebliebenes Testfenster nicht geschlossen (%s)", e)
+        self._stack = []
+        if old and self.desk.root(self.desk.foreground()) != self._base:
+            self.desk.activate(self._base)
+
+    # ---------- Sicherheit ----------
+
+    def _mark(self) -> None:
+        self._sent_tick = self.desk.tick()
+        self._own_last = self.desk.last_input_tick()
+
+    def _user_active(self) -> bool:
+        last = self.desk.last_input_tick()
+        if last == self._own_last:
+            return False
+        delta = ((last - self._sent_tick + 0x80000000) & MASK) - 0x80000000
+        if abs(delta) <= OWN_SLACK_MS:
+            self._own_last = last
+            return False
+        return True
+
+    def _check_input(self) -> None:
+        if self._cancel():
+            raise Abort("ausgeschaltet")
+        if self._user_active():
+            raise Abort("Sie sind aktiv")
+
+    def _check(self) -> None:
+        self._check_input()
+        self._ensure_focus()
+
+    def _target(self):
+        return self._stack[-1] if self._stack else self._base
+
+    def _is_new_browser(self, h) -> bool:
+        return bool(h) and h not in self._known and h not in self._stack and \
+            self.desk.process_name(h) in self._processes
+
+    def _ensure_focus(self) -> None:
+        d = self.desk
+        if self._opened and not self._stack:
+            return
+        for _ in range(3):
+            target = self._target()
+            fg = d.root(d.foreground())
+            if fg == target:
+                return
+            if self._stack and not d.is_window(target):
+                self._stack.pop()
+                raise Abort("eigenes Testfenster unerwartet geschlossen")
+            if self._stack and self._is_new_browser(fg):
+                self._problem("Seite hat ein Popup-Fenster geöffnet (wird geschlossen)")
+                self._stack.append(fg)
+                self._close_top()
+                continue
+            if self._stack and d.activate(target):
+                self._sleep(0.3)
+                continue
+            break
+        raise Abort("Fokus nicht im eigenen Testfenster")
+
+    def _problem(self, text: str) -> None:
+        self._problems.append(text)
+        log.warning("Browser-Test Auffälligkeit: %s", text)
+
+    def _wait(self, seconds: float, focus: bool = True) -> None:
+        end = self._clock() + seconds
+        while True:
+            self._check_input()
+            if focus:
+                self._ensure_focus()
+            left = end - self._clock()
+            if left <= 0:
+                return
+            self._sleep(min(POLL_S, left))
+
+    def _await_title(self, before: str, timeout: float):
+        t0 = self._clock()
+        while self._clock() - t0 < timeout:
+            self._wait(0.2)
+            if self.desk.title(self._target()) != before:
+                return self._clock() - t0
+        return None
+
+    # ---------- Schritte ----------
+
+    def _send(self, c: str) -> None:
+        if self._opened and not self._stack:
+            raise Abort("kein eigenes Testfenster mehr offen")
+        self.desk.send_combo(combo(c))
+        self._mark()
+
+    def _do_key(self, c):
+        self._send(c)
+
+    def _do_wait(self, seconds):
+        self._wait(seconds)
+
+    def _do_type(self, text, delays):
+        for ch, delay in zip(text, delays):
+            if ch == "\b":
+                self.desk.send_combo(combo("back"))
+            else:
+                self.desk.type_char(ch)
+            self._mark()
+            self._wait(delay)
+
+    def _do_nav(self, c, timeout, label):
+        before = self.desk.title(self._target())
+        self._send(c)
+        took = self._await_title(before, timeout)
+        if took is None:
+            self._problem(f"Keine Reaktion nach {timeout:.0f} s ({label})")
+        elif took > SLOW_LOAD_S:
+            self._problem(f"Langsam: {took:.1f} s ({label})")
+        else:
+            log.debug("Geladen in %.1f s (%s)", took, label)
+
+    def _do_wheel(self, delta):
+        self.desk.wheel(delta)
+        self._mark()
+
+    def _do_point(self, fx, fy):
+        d, h = self.desk, self._target()
+        left, top, right, bottom = d.window_rect(h)
+        scale = d.dpi(h) / 96
+        bar = min(TOOLBAR_PX * scale, (bottom - top) * 0.4)
+        x = left + 12 * scale + fx * max(right - left - 40 * scale, 1)
+        y = top + bar + fy * max(bottom - top - bar - 12 * scale, 1)
+        self._glide(x, y)
+
+    def _glide(self, x, y) -> None:
+        x0, y0 = self.desk.cursor()
+        cx = (x0 + x) / 2 + self._rng.uniform(-80, 80)
+        cy = (y0 + y) / 2 + self._rng.uniform(-80, 80)
+        n = self._rng.randint(12, 28)
+        for i in range(1, n + 1):
+            t = i / n
+            e = t * t * (3 - 2 * t)
+            px = (1 - e) ** 2 * x0 + 2 * (1 - e) * e * cx + e * e * x
+            py = (1 - e) ** 2 * y0 + 2 * (1 - e) * e * cy + e * e * y
+            self.desk.move_to(round(px), round(py))
+            self._mark()
+            self._sleep(self._rng.uniform(0.006, 0.016))
+
+    def _do_click(self, timeout):
+        before = self.desk.title(self._target())
+        self.desk.click()
+        self._mark()
+        took = self._await_title(before, min(timeout, 6.0))
+        if took is not None and took > SLOW_LOAD_S:
+            self._problem(f"Langsam nach Klick: {took:.1f} s")
+
+    def _do_new_window(self, c):
+        d = self.desk
+        self._send(c)
+        t0 = self._clock()
+        while self._clock() - t0 < NEW_WINDOW_TIMEOUT_S:
+            self._wait(0.15, focus=False)
+            fg = d.root(d.foreground())
+            if self._is_new_browser(fg):
+                self._stack.append(fg)
+                self._opened = True
+                return
+        self._problem(f"Kein neues Fenster nach {NEW_WINDOW_TIMEOUT_S:.0f} s ({c})")
+        raise Abort("neues Fenster nicht erkannt")
+
+    def _do_close_window(self):
+        self._close_top()
+
+    def _close_top(self) -> None:
+        d, h = self.desk, self._stack[-1]
+        for _ in range(CLOSE_TRIES):
+            if not d.is_window(h) or not d.is_visible(h):
+                break
+            self._check_input()
+            if d.root(d.foreground()) != h:
+                if not d.activate(h):
+                    raise Abort("Testfenster lässt sich nicht aktivieren")
+                self._sleep(0.3)
+                continue
+            self._send("ctrl+w")
+            self._wait(self._rng.uniform(0.3, 0.6), focus=False)
+        else:
+            raise Abort("Testfenster ließ sich nicht schließen")
+        self._stack.pop()
+        self._wait(0.4, focus=False)

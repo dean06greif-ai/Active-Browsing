@@ -1,0 +1,366 @@
+diff --git a/README.md b/README.md
+index 93ec91c..5195496 100644
+--- a/README.md
++++ b/README.md
+@@ -35,7 +35,8 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut,
+   - *Signal* – Maus (1 Pixel hin und zurück), Taste F15, *Zufällig* oder *Browser-Test*; darunter die Zufallsvarianten zum An-/Abhaken
+   - *Browser-Test Länge* – kurz / mittel / lang (bis 10 / 20 / 40 Aktionen je Durchlauf)
+   - *Abstand variieren* – nein, oder zufällig bis zu 10 / 25 / 50 % kürzer
+-  - *Abstand* – 30 s, 60 s, 2 min, 5 min (andere Werte über `config.json`)
++  - *Jetzt testen* – startet sofort einen Durchlauf (schaltet bei Bedarf ein), ohne auf den Abstand zu warten
++  - *Abstand* – 5 s, 10 s, 15 s, 30 s, 60 s, 2 min, 5 min oder *Eigener Wert eingeben …* (1–3600 s)
+   - *Automatisch abschalten* – nie, nach 1, 4 oder 8 Stunden (Timer startet beim Einschalten)
+   - *Beim Programmstart aktivieren*
+   - *Mit Windows starten* – legt eine Verknüpfung im Autostart-Ordner an (`shell:startup`), keine Registry
+@@ -63,14 +64,14 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
+ 
+ | Schlüssel | Werte | Bedeutung |
+ |---|---|---|
+-| `interval_seconds` | 10–3600 | Abstand zwischen zwei Signalen |
++| `interval_seconds` | 1–3600 | Abstand zwischen zwei Signalen |
+ | `signal` | `mouse` / `f15` / `random` / `browse` | Art des Signals |
+ | `timer_hours` | 0–24 (0 = unbegrenzt) | automatisch abschalten nach … Stunden |
+ | `start_active` | `true` / `false` | beim Programmstart sofort einschalten |
+ | `verbose_log` | `true` / `false` | jedes gesendete Signal protokollieren (für Tests) |
+ | `random_variants` | Liste aus `mouse`, `scroll`, `keys` | Varianten für `signal: random` (mind. eine) |
+ | `jitter_percent` | 0–50 | Abstand zufällig um bis zu so viel Prozent **kürzer** (nie länger) |
+-| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex und jedes Programm mit „browser“ im Namen |
++| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex, `power.exe` und jedes Programm mit „browser“ oder „power…“ im Namen (außer PowerShell/PowerToys). Wird keiner gefunden, wird das oberste normale Programmfenster genommen (Explorer/Taskleiste/Startmenü und unsichtbare Windows-Fenster werden ignoriert) |
+ | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
+ | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
+ 
+diff --git a/awaketoggle/browse.py b/awaketoggle/browse.py
+index 67166bf..85eb7ab 100644
+--- a/awaketoggle/browse.py
++++ b/awaketoggle/browse.py
+@@ -11,19 +11,21 @@ from .variants import Plan
+ KNOWN_BROWSERS = frozenset({
+     "msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe", "opera.exe", "chromium.exe", "thorium.exe",
+     "browser.exe", "arc.exe",
+-    "powerbrowser.exe", "power browser.exe", "power-browser.exe", "power_browser.exe", "powerbrowser64.exe",
++    "power.exe", "powerbrowser.exe", "power browser.exe", "power-browser.exe", "power_browser.exe", "powerbrowser64.exe",
+ })
+ 
+ 
+ class BrowserNames:
+-    """Erkennt Browser: bekannte Programme, eigene Einträge und alles mit „browser“ im Namen (z. B. Power Browser)."""
++    """Erkennt Browser: bekannte Programme, eigene Einträge und alles mit „browser“/„power“ im Namen (außer PowerShell)."""
+ 
+     def __init__(self, extra=()):
+         self.extra = frozenset(n.lower() for n in extra)
+ 
+     def __contains__(self, name) -> bool:
+         name = (name or "").lower()
+-        return name in self.extra or name in KNOWN_BROWSERS or "browser" in name
++        return name in self.extra or name in KNOWN_BROWSERS or "browser" in name or \
++            (name.startswith("power") and not name.startswith(("powershell", "powertoys", "powercfg")))
++
+ MAX_TABS = 6
+ MAX_WINDOWS = 2
+ LOAD_TIMEOUT_S = 15.0
+diff --git a/awaketoggle/browse_runner.py b/awaketoggle/browse_runner.py
+index 3e8b9b0..6606fa9 100644
+--- a/awaketoggle/browse_runner.py
++++ b/awaketoggle/browse_runner.py
+@@ -45,6 +45,7 @@ class Runner:
+         fg = self._bring_browser_to_front(processes)
+         if isinstance(fg, Result):
+             return fg
++        processes = BrowserNames(tuple(processes.extra) + (d.process_name(fg),))
+         self._processes, self._cancel, self._base = processes, cancel, fg
+         self._problems, self._stack, self._opened = [], [], False
+         self._mark()
+@@ -81,6 +82,8 @@ class Runner:
+         if fg and proc in processes:
+             return fg
+         h = d.find_browser(processes)
++        if h and d.process_name(h) not in processes:
++            log.info("Kein bekannter Browser, nehme oberstes Fenster: %s", d.process_name(h))
+         if not h:
+             return Result("skipped", f"kein Browserfenster gefunden (vorne: {proc or '-'}) – "
+                                      "Programmname in browse_processes eintragen")
+diff --git a/awaketoggle/config.py b/awaketoggle/config.py
+index ba8060f..2b7430e 100644
+--- a/awaketoggle/config.py
++++ b/awaketoggle/config.py
+@@ -12,11 +12,11 @@ log = logging.getLogger(__name__)
+ SIGNALS = ("mouse", "f15", "random", "browse")
+ VARIANTS = ("mouse", "scroll", "keys")
+ JITTER_CHOICES = (0, 10, 25, 50)
+-INTERVAL_CHOICES = (30, 60, 120, 300)
++INTERVAL_CHOICES = (5, 10, 15, 30, 60, 120, 300)
+ TIMER_CHOICES = (0, 1, 4, 8)
+ BROWSE_LENGTH_CHOICES = (10, 20, 40)
+ BROWSE_ACTIONS_MIN, BROWSE_ACTIONS_MAX = 3, 100
+-INTERVAL_MIN, INTERVAL_MAX = 10, 3600
++INTERVAL_MIN, INTERVAL_MAX = 1, 3600
+ TIMER_MAX_HOURS = 24
+ 
+ 
+diff --git a/awaketoggle/core.py b/awaketoggle/core.py
+index 3ae3585..6ed10c2 100644
+--- a/awaketoggle/core.py
++++ b/awaketoggle/core.py
+@@ -69,6 +69,7 @@ class Engine:
+         self._off_reason = ""
+         self._session_locked = False
+         self._own_input = None
++        self._force = False
+         self._status = Status("off", "Aus")
+ 
+     @property
+@@ -120,6 +121,13 @@ class Engine:
+         self._session_locked = locked
+         self._wake.set()
+ 
++    def run_now(self) -> None:
++        """Sofort einen Durchlauf starten, ohne auf den Abstand zu warten."""
++        self._force = True
++        if not self._active:
++            self.set_active(True, "Jetzt testen")
++        self._wake.set()
++
+     def poke(self) -> None:
+         self._wake.set()
+ 
+@@ -203,6 +211,9 @@ class Engine:
+         locked = self._session_locked or api.is_locked()
+         last = api.last_input_tick()
+         action, remaining_ms = decide(api.tick(), last, self._own_input, int(target * 1000), locked)
++        force, self._force = self._force, False
++        if force and action != LOCKED:
++            action = SEND
+ 
+         if action == LOCKED:
+             if self._status.text != TEXT_LOCKED:
+diff --git a/awaketoggle/tray.py b/awaketoggle/tray.py
+index 1f03161..4cbe5b5 100644
+--- a/awaketoggle/tray.py
++++ b/awaketoggle/tray.py
+@@ -1,5 +1,6 @@
+ import logging
+ import subprocess
++import threading
+ from dataclasses import asdict, replace
+ 
+ import pystray
+@@ -67,6 +68,33 @@ class TrayApp:
+         self.engine.toggle()
+         self.icon.update_menu()
+ 
++    def _run_now(self) -> None:
++        log.info("Jetzt testen über Tray-Menü")
++        self.engine.run_now()
++        self.icon.update_menu()
++
++    def _ask_interval(self) -> None:
++        cur = self._cfg().interval_seconds
++        script = ("Add-Type -AssemblyName Microsoft.VisualBasic;"
++                  f"[Microsoft.VisualBasic.Interaction]::InputBox('Abstand in Sekunden "
++                  f"({config_mod.INTERVAL_MIN}-{config_mod.INTERVAL_MAX}):','{APP_NAME}','{cur}')")
++        try:
++            out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", script], capture_output=True,
++                                 text=True, timeout=600, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
++        except Exception:
++            log.exception("Eingabefenster für Abstand fehlgeschlagen")
++            return
++        if not out:
++            return
++        try:
++            sec = int(float(out.replace(",", ".")))
++        except ValueError:
++            sec = 0
++        if not config_mod.INTERVAL_MIN <= sec <= config_mod.INTERVAL_MAX:
++            self._notify(f"Ungültiger Abstand: {out} (erlaubt {config_mod.INTERVAL_MIN}-{config_mod.INTERVAL_MAX} s)")
++            return
++        self._change(interval_seconds=sec)
++
+     def _toggle_autostart(self) -> None:
+         try:
+             if autostart.is_enabled():
+@@ -123,6 +151,7 @@ class TrayApp:
+         return Menu(
+             Item("Aktiv", self._toggle, checked=lambda i: self.engine.active, default=True),
+             Item(lambda i: self.engine.status.text, lambda: None, enabled=False),
++            Item("Jetzt testen (sofort ausführen)", self._run_now),
+             Menu.SEPARATOR,
+             Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()],
+                                 Menu.SEPARATOR, *[self._variant(v) for v in VARIANTS])),
+@@ -132,7 +161,10 @@ class TrayApp:
+                                                          browse_length_label)),
+                  enabled=lambda i: self._cfg().signal == "browse"),
+             Item("Abstand", Menu(*[self._radio(interval_label(s), "interval_seconds", s) for s in INTERVAL_CHOICES],
+-                                 self._custom("interval_seconds", INTERVAL_CHOICES, interval_label))),
++                                 self._custom("interval_seconds", INTERVAL_CHOICES, interval_label),
++                                 Menu.SEPARATOR,
++                                 Item("Eigener Wert eingeben …", lambda: threading.Thread(
++                                     target=self._ask_interval, daemon=True).start()))),
+             Item("Abstand variieren", Menu(*[self._radio(jitter_label(j), "jitter_percent", j) for j in JITTER_CHOICES],
+                                            self._custom("jitter_percent", JITTER_CHOICES, jitter_label))),
+             Item("Automatisch abschalten", Menu(*[self._radio(timer_label(h), "timer_hours", h) for h in TIMER_CHOICES],
+diff --git a/awaketoggle/variants.py b/awaketoggle/variants.py
+index f932594..fd858dc 100644
+--- a/awaketoggle/variants.py
++++ b/awaketoggle/variants.py
+@@ -62,4 +62,4 @@ def next_interval(cfg, rng: random.Random) -> float:
+     base = float(cfg.interval_seconds)
+     if not cfg.jitter_percent:
+         return base
+-    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), 5.0)
++    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), min(base, 5.0))
+diff --git a/awaketoggle/win32.py b/awaketoggle/win32.py
+index 7766e97..d6270f4 100644
+--- a/awaketoggle/win32.py
++++ b/awaketoggle/win32.py
+@@ -267,6 +267,10 @@ def selftest() -> int:
+         desk = Desktop()
+         fg = desk.root(desk.foreground())
+         lines.append(f"[INFO] Vordergrundprogramm: {desk.process_name(fg) if fg else '-'}")
++        from .browse import BrowserNames
++        h = desk.find_browser(BrowserNames())
++        lines.append(f"[INFO] Browser-Test würde nutzen: {desk.process_name(h) if h else '-'}"
++                     f"{' – ' + desk.title(h)[:60] if h else ''}")
+         check("EnumWindows", len(desk.top_windows()) >= 0, essential=False)
+     except Exception as e:
+         check("Fensterfunktionen", False, repr(e), essential=False)
+@@ -296,6 +300,14 @@ SM_SWAPBUTTON = 23
+ SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 76, 77, 78, 79
+ EXTENDED_VKS = frozenset({0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x6F})
+ MODIFIER_VKS = frozenset({0x10, 0x11, 0x12})
++GWL_EXSTYLE = -20
++WS_EX_TOOLWINDOW = 0x00000080
++DWMWA_CLOAKED = 14
++SHELL_PROCS = frozenset({
++    "explorer.exe", "shellexperiencehost.exe", "startmenuexperiencehost.exe", "searchhost.exe", "searchapp.exe",
++    "textinputhost.exe", "lockapp.exe", "applicationframehost.exe", "systemsettings.exe", "taskmgr.exe",
++    "awaketoggle.exe", "python.exe", "pythonw.exe", "widgets.exe", "shellhost.exe",
++})
+ 
+ WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+ user32.GetForegroundWindow.argtypes = []
+@@ -337,6 +349,14 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
+ kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                 ctypes.POINTER(wintypes.DWORD)]
+ kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
++user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
++user32.GetWindowLongW.restype = wintypes.LONG
++try:
++    dwmapi = ctypes.WinDLL("dwmapi")
++    dwmapi.DwmGetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD]
++    dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
++except OSError:
++    dwmapi = None
+ try:
+     user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+     user32.GetDpiForWindow.restype = wintypes.UINT
+@@ -427,20 +447,38 @@ class Desktop:
+         user32.EnumWindows(WNDENUMPROC(cb), 0)
+         return found
+ 
++    def _is_app_window(self, h: int) -> bool:
++        if not user32.IsWindowVisible(h) or user32.GetWindow(h, GW_OWNER) or user32.GetWindowTextLengthW(h) <= 0:
++            return False
++        if user32.GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
++            return False
++        cloaked = wintypes.DWORD()
++        if dwmapi and not dwmapi.DwmGetWindowAttribute(h, DWMWA_CLOAKED, ctypes.byref(cloaked),
++                                                       ctypes.sizeof(cloaked)) and cloaked.value:
++            return False
++        pid = wintypes.DWORD()
++        user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
++        if pid.value == os.getpid():
++            return False
++        left, top, right, bottom = self.window_rect(h)
++        return right - left > 200 and bottom - top > 200 or bool(user32.IsIconic(h))
++
+     def find_browser(self, names) -> int:
+-        """Oberstes sichtbares Hauptfenster eines Browsers (EnumWindows liefert in Z-Reihenfolge)."""
+-        found = []
++        """Oberstes Browserfenster (Z-Reihenfolge); sonst das oberste normale Programmfenster (kein Explorer/Shell)."""
++        browser, front = [], []
+ 
+         def cb(h, _):
+-            if user32.IsWindowVisible(h) and not user32.GetWindow(h, GW_OWNER) and \
+-                    user32.GetWindowTextLengthW(h) > 0 and self.process_name(h) in names:
+-                left, top, right, bottom = self.window_rect(h)
+-                if right - left > 200 and bottom - top > 200 or user32.IsIconic(h):
+-                    found.append(h)
+-                    return False
++            if not self._is_app_window(h):
++                return True
++            proc = self.process_name(h)
++            if proc in names:
++                browser.append(h)
++                return False
++            if not front and proc and proc not in SHELL_PROCS:
++                front.append(h)
+             return True
+         user32.EnumWindows(WNDENUMPROC(cb), 0)
+-        return found[0] if found else 0
++        return (browser or front or [0])[0]
+ 
+     def activate(self, h: int) -> bool:
+         if user32.IsIconic(h):
+diff --git a/tests/test_browse.py b/tests/test_browse.py
+index 92679a2..63e1978 100644
+--- a/tests/test_browse.py
++++ b/tests/test_browse.py
+@@ -1,7 +1,7 @@
+ import random
+ 
+ from awaketoggle import queries
+-from awaketoggle.browse import ACTION_IDS, BLOCKED, MAX_TABS, VK, make_scenario
++from awaketoggle.browse import BrowserNames, ACTION_IDS, BLOCKED, MAX_TABS, VK, make_scenario
+ from awaketoggle.browse_runner import Runner
+ from awaketoggle.config import Config
+ from tests.test_core import make
+@@ -355,3 +355,18 @@ def test_config_browse_keys(tmp_path):
+     cfg, warnings = load(p)
+     assert len(warnings) == 3 and cfg == Config()
+     assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}
++
++
++def test_power_exe_is_browser():
++    from awaketoggle.browse import BrowserNames
++    names = BrowserNames()
++    assert "power.exe" in names and "Power.exe" in names
++    for n in ("powershell.exe", "powertoys.exe", "explorer.exe"):
++        assert n not in names
++
++
++def test_runner_uses_unknown_front_window_process():
++    desk = FakeDesk(user_proc="mycustom.exe")
++    desk.find_browser = lambda names: USER
++    r = Runner(desk, sleep=desk.sleep, clock=desk.clock)
++    assert r._bring_browser_to_front(BrowserNames()) == USER
+diff --git a/tests/test_config.py b/tests/test_config.py
+index 798b525..97597c3 100644
+--- a/tests/test_config.py
++++ b/tests/test_config.py
+@@ -27,7 +27,7 @@ def test_roundtrip(tmp_path):
+ 
+ def test_invalid_values_fall_back(tmp_path):
+     p = tmp_path / "config.json"
+-    p.write_text(json.dumps({"interval_seconds": 2, "signal": "x", "timer_hours": -1,
++    p.write_text(json.dumps({"interval_seconds": 0, "signal": "x", "timer_hours": -1,
+                              "start_active": "yes", "foo": 1}), "utf-8")
+     cfg, warnings = load(p)
+     assert cfg == Config()
+diff --git a/tests/test_core.py b/tests/test_core.py
+index 9c602df..0b330b0 100644
+--- a/tests/test_core.py
++++ b/tests/test_core.py
+@@ -195,3 +195,13 @@ def test_shutdown_without_thread_is_safe():
+     eng.shutdown()
+     eng.set_active(True)
+     assert not eng.active and api.awake == []
++
++
++def test_run_now_forces_signal_even_if_user_active():
++    api, clock, eng = make(Config(interval_seconds=60))
++    eng.run_now()
++    assert eng.active
++    eng.step()
++    assert len(api.sent) == 1
++    eng.step()
++    assert len(api.sent) == 1
