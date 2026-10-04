@@ -1,5 +1,5 @@
 diff --git a/README.md b/README.md
-index 93ec91c..fbeabe3 100644
+index 93ec91c..b801f96 100644
 --- a/README.md
 +++ b/README.md
 @@ -35,7 +35,8 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut,
@@ -46,6 +46,15 @@ index 93ec91c..fbeabe3 100644
  **Probleme sehen:** Im Protokoll stehen Start, Ende und Dauer jedes Durchlaufs sowie Auffälligkeiten als `WARNING`:
  `Langsam: 7.3 s (Suche 'wetter 4711')`, `Keine Reaktion nach 15 s (...)` (Fenstertitel hat sich nach Enter nicht
  geändert), Popups, nicht erkannte neue Fenster. Mit `verbose_log: true` wird jede einzelne Aktion protokolliert.
+@@ -193,7 +202,7 @@ pip install -r requirements.txt -r requirements-dev.txt
+ python -m pytest -q tests          # Logik-Tests
+ python -m awaketoggle --selftest   # prüft die echten Win32-Aufrufe (zeigt auch das Vordergrundprogramm)
+ python -m awaketoggle              # direkt aus dem Quelltext starten
+-./tools/build.ps1                  # erzeugt dist/AwakeToggle.exe
++.\tools\build.cmd                  # erzeugt dist/AwakeToggle.exe (umgeht die Skript-Sperre von PowerShell)
+ ```
+ 
+ ## Release erstellen
 diff --git a/awaketoggle/badge.py b/awaketoggle/badge.py
 new file mode 100644
 index 0000000..4fce2a9
@@ -785,6 +794,15 @@ index 9c602df..0b330b0 100644
 +    assert len(api.sent) == 1
 +    eng.step()
 +    assert len(api.sent) == 1
+diff --git a/tools/build.cmd b/tools/build.cmd
+new file mode 100644
+index 0000000..e08291f
+--- /dev/null
++++ b/tools/build.cmd
+@@ -0,0 +1,3 @@
++@echo off
++powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0build.ps1"
++if errorlevel 1 pause
 diff --git a/tools/build.ps1 b/tools/build.ps1
 index d5ba98d..b3ff358 100644
 --- a/tools/build.ps1

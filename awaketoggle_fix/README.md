@@ -202,7 +202,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest -q tests          # Logik-Tests
 python -m awaketoggle --selftest   # prüft die echten Win32-Aufrufe (zeigt auch das Vordergrundprogramm)
 python -m awaketoggle              # direkt aus dem Quelltext starten
-./tools/build.ps1                  # erzeugt dist/AwakeToggle.exe
+.\tools\build.cmd                  # erzeugt dist/AwakeToggle.exe (umgeht die Skript-Sperre von PowerShell)
 ```
 
 ## Release erstellen
