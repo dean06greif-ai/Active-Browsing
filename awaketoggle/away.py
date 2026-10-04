@@ -37,13 +37,16 @@ class Away:
             if self._on:
                 return
             self._on = True
+            self._dim(cfg)
+        self._start_watcher()
+
+    def _dim(self, cfg) -> None:
         log.info("Weg-Modus an: Helligkeit %d %%%s", cfg.away_brightness,
                  ", Stromsparmodus an" if cfg.away_energy_saver else "")
         try:
             self._power.dim(cfg)
         except Exception:
             log.exception("Weg-Modus: Helligkeit/Stromsparen konnte nicht gesetzt werden")
-        self._start_watcher()
 
     def done(self) -> None:
         """Nach jedem Signal/Durchlauf: ab jetzt zählt jede neue Eingabe als „Sie sind zurück“."""
@@ -53,16 +56,16 @@ class Away:
             self._busy = False
 
     def leave(self, reason: str) -> None:
-        with self._lock:
+        with self._lock:  # unter der Sperre, damit ein gleichzeitiges enter() erst danach wieder abdunkelt
             if not self._on:
                 return
             self._on, self._busy, cfg = False, False, self._cfg
-        log.info("Weg-Modus aus (%s): Helligkeit %d %%%s", reason, cfg.back_brightness,
-                 ", Stromsparmodus aus" if cfg.away_energy_saver else "")
-        try:
-            self._power.restore(cfg)
-        except Exception:
-            log.exception("Weg-Modus: Helligkeit/Stromsparen konnte nicht zurückgesetzt werden")
+            log.info("Weg-Modus aus (%s): Helligkeit %d %%%s", reason, cfg.back_brightness,
+                     ", Stromsparmodus aus" if cfg.away_energy_saver else "")
+            try:
+                self._power.restore(cfg)
+            except Exception:
+                log.exception("Weg-Modus: Helligkeit/Stromsparen konnte nicht zurückgesetzt werden")
 
     def check(self) -> bool:
         """Eine Prüfung des Wächters; True, wenn Sie zurück sind (dann ist der Weg-Modus schon aus)."""
@@ -75,7 +78,7 @@ class Away:
             if ((last - self._mark_tick) & MASK) <= OWN_SLACK_MS:
                 self._mark = last
                 return False
-        self.leave("Sie sind zurück")
+            self.leave("Sie sind zurück")
         if self.on_back:
             self.on_back()
         return True

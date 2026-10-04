@@ -1,0 +1,63 @@
+{
+  "summary": "Static review of the new 'Away' feature (brightness 0 + energy saver while the test runs, restore when the user is back) plus install/autostart stack, and full pytest run (79 tests, all pass). Added tests/test_away_adversarial.py (6 tests, all green) that cover check-during-busy, OWN_SLACK_MS boundary, idempotency of enter/leave, done-without-enter safety, and on_back callback semantics. No critical bugs found; a handful of minor concerns listed below.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "awaketoggle.away.Away.check",
+        "issue": "Lock-release-then-leave race: after the `with self._lock` block decides 'user is back', the lock is released before `self.leave(...)` runs. A concurrent `engine._tick -> away.enter(cfg)` can observe `_on=True` and return early (no re-dim), after which the watcher's `leave()` sets `_on=False` and calls `power.restore`. Window exists until the next tick, when `enter()` will re-dim because `_on` is now False. Eventually consistent, but a signal can be sent in that window without the screen being dim. Suggestion: move `self.leave(...)` + `self.on_back()` inside the lock, or set `_on=False` inside the lock and perform `power.restore` outside with a separate 'already restored' flag."
+      },
+      {
+        "endpoint": "awaketoggle.away.Away.enter",
+        "issue": "Second `enter()` call for the same away session does not re-apply `power.dim` even if `cfg` has changed between the two enters (e.g. user switched away_brightness via the tray while a signal is in flight). Low likelihood; log line is also skipped. Not a correctness bug, just a UX nit."
+      },
+      {
+        "endpoint": "awaketoggle.autostart.launch_command",
+        "issue": "If pythonw.exe is not next to python.exe, falls back to python.exe for the autostart/desktop shortcut, which opens a visible console window at every start - undesirable for a tray app. installieren.ps1 has the same fallback with a Write-Warning but at least warns the user. Consider refusing to create the shortcut (or using 'start /min' CMD wrapper) when only python.exe is available."
+      },
+      {
+        "endpoint": "awaketoggle.autostart.create (PowerShell shortcut helper)",
+        "issue": "`subprocess.run` passes `AT_ARGS`/`AT_ICON` as possibly-empty env vars. On Windows, reading `$env:AT_ARGS` when the variable is set to '' returns $null, and `$s.Arguments = $null` depends on WScript.Shell tolerating null. Safer to guard with `if($env:AT_ARGS){ $s.Arguments=$env:AT_ARGS }` like the existing icon branch."
+      },
+      {
+        "endpoint": "awaketoggle.power_win.read_energy_saver",
+        "issue": "Regex `r':\\s*0x([0-9a-fA-F]+)\\s*$'` with MULTILINE relies on `powercfg /query` output layout. On non-English Windows the labels are localized; while the hex values still appear, the ordering (AC before DC) is assumed. If a future Windows build swaps the order or adds extra hex lines, the last-two heuristic could pick up wrong values. Not easily fixable without parsing labels, but worth a defensive comment."
+      },
+      {
+        "endpoint": "awaketoggle.power_win.write_overlay",
+        "issue": "Passing the all-zero GUID when `state['overlay']` is None/empty relies on undocumented Windows behaviour where GUID_ZERO resets to the default (Balanced) overlay. Works on current Win10/11 but is not formally documented; a `read_overlay()` returning None at save time will later be restored as GUID_ZERO instead of being left untouched. Low risk."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_away.py",
+    "/app/tests/test_away_adversarial.py",
+    "/app/tests/test_browse_adversarial.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider closing the Away.check lock-release-then-leave race (move leave() inside the lock, or add a `_restoring` flag to prevent enter() from racing past leave()).",
+    "Guard `$env:AT_ARGS` in autostart.py's PowerShell shortcut helper the same way `AT_ICON` is guarded.",
+    "In autostart.launch_command, when only python.exe is available, either reject or wrap it so no console window appears on autostart.",
+    "Optionally re-apply power.dim(cfg) inside enter() when cfg differs from the one captured at the previous enter (to pick up away_brightness changes mid-session)."
+  ],
+  "critical_code_review_comments": [
+    "away.py is small, well-locked and correctly uses try/finally around enter/done in core._send/_browse. OWN_SLACK_MS=300 and the mark/mark_tick comparison correctly use 32-bit wrap-safe arithmetic.",
+    "core.py _tick cleanly disables away mode whenever cfg.away_power is False, on USER_ACTIVE, on LOCKED path (indirectly via not re-entering), on inactive, and on shutdown via _release -> _leave_away. _browse additionally leaves away mode on 'Sie sind aktiv' aborts. Coverage is complete.",
+    "power_win.py uses correct ctypes signatures: PowerSetActiveOverlayScheme takes GUID by value, PowerGetEffectiveOverlayScheme takes POINTER(GUID). DDC/CI loop properly calls DestroyPhysicalMonitors in a finally. Brightness scaling value = lo + (hi - lo) * percent // 100 is correct.",
+    "State persistence (away_state.json) is only written on first dim per session (guarded by self._load() is None) and removed on restore -> no double-save, and recover() on startup handles hard-kill cleanly.",
+    "installieren.ps1 / deinstallieren.ps1 are idempotent (Stop-AwakeToggle before copying; shortcuts recreated unconditionally; uninstall removes both the install dir and all three link locations). Shortcut creation uses the correct WScript.Shell COM pattern. Autostart link is only refreshed if the user had enabled it (Test-Path check).",
+    "config.py validates away_power / away_energy_saver as bool and away_brightness / back_brightness as 0-100 ints, with user-facing German warnings on invalid values; defaults match the spec (0 / 50 / energy saver on).",
+    "tray.py exposes 'Weg-Modus' as a toggle item showing both brightness values, plus a 'Verknüpfung auf Desktop + Startmenü anlegen' entry independent of autostart - matches the user requirement that the program is launchable via shortcut even when autostart is off."
+  ],
+  "updated_files": [
+    "/app/tests/test_away_adversarial.py (new, 6 tests)"
+  ],
+  "success_rate": {"backend": "100% (79/79 pytest, Win32 simulated via FakeApi/FakePower)", "frontend": "n/a"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Full pytest suite is now 79 tests (was 73). test_away_adversarial.py covers busy-state, OWN_SLACK_MS boundary, enter/leave idempotency, done-before-enter safety, and on_back callback single-fire. power_win.py and installieren.ps1 could only be reviewed statically (Windows APIs); no runtime validation possible on this Linux host. Previous iteration's _do_new_window fix is still green via test_browse_adversarial.py.",
+  "rca of the issue": "No reproducible bug this iteration. The listed minor concerns are either latent races with narrow windows (Away.check leave-outside-lock) or platform-API edge cases (overlay GUID_ZERO, powercfg output locale) that would need a real Windows host to exercise."
+}

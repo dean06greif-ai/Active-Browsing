@@ -11,6 +11,12 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - Selftest listet Browserfenster mit normal/Inkognito
 - 67 pytest-Tests grün (FakeDesk, Win32 simuliert); ZIP: /app/AwakeToggle_komplett.zip
 
+## Umgesetzt v1.3.0 (2026-06)
+- Installieren.cmd / Deinstallieren.cmd (tools/installieren.ps1): pip, exe-Bau (noconsole), Kopie nach %LOCALAPPDATA%\Programs\AwakeToggle, Desktop+Startmenü-Verknüpfung, Autostart-Link aktualisiert; Fallback pythonw
+- Tray: "Verknüpfung auf Desktop + Startmenü anlegen", "Weg-Modus" Schalter
+- Weg-Modus (away.py + power_win.py): bei Arbeit Helligkeit 0 % (WMI + DDC/CI), Energiesparmodus (ESBATTTHRESHOLD 100) + Overlay beste Effizienz; bei Rückkehr (Watcher 0,3 s) 50 % + vorheriger Zustand; Recovery via away_state.json
+- Config: away_power, away_brightness, back_brightness, away_energy_saver; 79 Tests grün
+
 ## Backlog
 - P1 Echter Lauf mit Power Browser, Inkognito-Titel prüfen (--selftest)
 - P2 Live-Status im Tooltip, CSV-Bericht, eigene Wortliste

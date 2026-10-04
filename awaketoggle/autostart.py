@@ -8,7 +8,7 @@ LNK_NAME = "AwakeToggle.lnk"
 CREATE_NO_WINDOW = 0x08000000
 _PS_SCRIPT = (
     "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:AT_LNK);"
-    "$s.TargetPath=$env:AT_TARGET;$s.Arguments=$env:AT_ARGS;"
+    "$s.TargetPath=$env:AT_TARGET;if($env:AT_ARGS){$s.Arguments=$env:AT_ARGS};"
     "$s.WorkingDirectory=$env:AT_WORKDIR;$s.Description='AwakeToggle';"
     "if($env:AT_ICON){$s.IconLocation=$env:AT_ICON};$s.Save()"
 )
