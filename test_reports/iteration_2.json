@@ -1,0 +1,22 @@
+{
+  "summary": "Backend-only pytest + static review for new candidate-selection logic in /app/awaketoggle_fix/awaketoggle/badge_win.py. All 54 tests pass in 0.60s, including the two targeted regressions: test_badge_candidates_prefer_power_points_button (verifies PowerPointsActionView is picked first, ExtensionsToolbarButton/ReloadButton are excluded) and test_badge_win_generates_comtypes_module_before_import (verifies comtypes.gen submodule generation precedes import and read_badge==698). Static review of badge_win.py and win32.py selftest confirms correctness.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/awaketoggle_fix/tests/test_browse.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_rank correctly ranks user's real toolbar: PowerPointsActionView -> 0 (class contains 'points' AND 'actionview'), PowerGuardButtonView -> 5 (via name 'coin'), ExtensionsToolbarButton -> None (name 'Erweiterungen' has no coin/point and class has no hint), ReloadButton -> None, caption buttons -> None. Auto mode therefore selects PowerPointsActionView first and never picks ExtensionsToolbarButton/ReloadButton.",
+    "read_badge(hwnd, extension='Power Coins') filters buttons whose name contains 'power coins' (matches both PowerPointsActionView and PowerGuardButtonView), then applies _candidates ordering, so PowerPointsActionView still wins first; ExtensionsToolbarButton (name 'Erweiterungen') is correctly excluded by the name filter.",
+    "comtypes.gen import order remains correct: GetModule('UIAutomationCore.dll') runs in _automation() before any `from comtypes.gen...` import in both _automation() (lines 41 before 42) and toolbar_buttons() (line 49 before 50-51). _child_texts uses the module-level constant TREE_SCOPE_DESCENDANTS=4 and uia.CreateTrueCondition() (no new comtypes.gen import), safe.",
+    "win32.py selftest unpacks 5-tuples consistently: line 281 `for name, help_text, cls, rect, _ in toolbar_buttons(h)` and line 284 `for name, _, cls, _, el in _candidates(toolbar_buttons(h))` both match the 5-tuple returned by badge_win.toolbar_buttons (name, help_text, class, rect, element). No NameError risk.",
+    "OCR dark-image inversion: `_ocr` computes mean luminance after autocontrast; if <128 it inverts. Reasonable; minor nit that autocontrast may already brighten some dark samples, but harmless.",
+    "No syntax or logic issues found. File is well under 700 lines (badge_win.py ~146 lines)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (54/54 pytest)", "frontend": "N/A (Windows desktop tool, no frontend)"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Windows-only desktop Python tool at /app/awaketoggle_fix. Run `cd /app/awaketoggle_fix && python3 -m pytest -q tests`. win32.py is Windows-only (ctypes.WinDLL at import), so it is only reviewed statically on Linux. Key regressions live in tests/test_browse.py: test_badge_candidates_prefer_power_points_button and test_badge_win_generates_comtypes_module_before_import.",
+  "rca of the issue": "Original bug: auto counter-selection only matched classes containing 'toolbaraction' or 'extension', which on the user's real browser picked the puzzle 'Erweiterungen' (ExtensionsToolbarButton) rather than the real counter button (PowerPointsActionView), producing 'Zähler (automatisch): None'. Fix: COUNTER_HINTS reordered to prefer points/coin/badge/counter/actionview on the class name, and fall back to name containing 'coin'/'point'; non-matching buttons return None rank and are excluded. read_badge also now reads UIA descendants' CurrentName via _child_texts before falling back to OCR (which now inverts dark images). toolbar_buttons returns a 5-tuple with the element so _child_texts can walk subtree. Verified by test_badge_candidates_prefer_power_points_button."
+}
