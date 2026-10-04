@@ -155,6 +155,9 @@ class TrayApp:
             Menu.SEPARATOR,
             Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()],
                                 Menu.SEPARATOR, *[self._variant(v) for v in VARIANTS])),
+            Item("Erweiterungs-Zähler vorher/nachher lesen",
+                 lambda: self._change(badge_read=not self._cfg().badge_read),
+                 checked=lambda i: self._cfg().badge_read, enabled=lambda i: self._cfg().signal == "browse"),
             Item("Browser-Test Länge", Menu(*[self._radio(browse_length_label(n), "browse_actions_max", n)
                                               for n in BROWSE_LENGTH_CHOICES],
                                             self._custom("browse_actions_max", BROWSE_LENGTH_CHOICES,

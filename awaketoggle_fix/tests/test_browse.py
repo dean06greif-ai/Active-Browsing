@@ -370,3 +370,25 @@ def test_runner_uses_unknown_front_window_process():
     desk.find_browser = lambda names: USER
     r = Runner(desk, sleep=desk.sleep, clock=desk.clock)
     assert r._bring_browser_to_front(BrowserNames()) == USER
+
+
+def test_badge_parse_and_compare():
+    from awaketoggle.badge import compare, parse_number
+    assert parse_number("698") == 698
+    assert parse_number("Rewards: 1.2k") == 1200
+    assert parse_number("Punkte 1.234") == 1234
+    assert parse_number("Meine Erweiterung") is None
+    assert compare(698, 712) == ("Zähler 698 → 712", None)
+    assert compare(698, 698)[1].startswith("Zähler nicht gestiegen")
+    assert compare(None, None) == ("", None)
+
+
+def test_runner_reads_badge_before_and_after():
+    desk = FakeDesk()
+    values = iter([698, 698])
+    r = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(1))
+    plan = make_scenario(Config(browse_actions_max=3), random.Random(1))
+    res = r.run(plan, (), badge=lambda h: next(values))
+    assert res.status == "done"
+    assert "Zähler 698 → 698" in res.text
+    assert any("nicht gestiegen" in p for p in res.problems)

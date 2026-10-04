@@ -4,6 +4,7 @@ import random
 import time
 from dataclasses import dataclass, field
 
+from .badge import compare
 from .browse import BrowserNames, combo
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class Runner:
 
     # ---------- Ablauf ----------
 
-    def run(self, plan, processes, cancel=lambda: False, verbose=False) -> Result:
+    def run(self, plan, processes, cancel=lambda: False, verbose=False, badge=None) -> Result:
         d = self.desk
         processes = BrowserNames(processes)
         fg = self._bring_browser_to_front(processes)
@@ -48,6 +49,7 @@ class Runner:
         processes = BrowserNames(tuple(processes.extra) + (d.process_name(fg),))
         self._processes, self._cancel, self._base = processes, cancel, fg
         self._problems, self._stack, self._opened = [], [], False
+        before = self._read_badge(badge, fg)
         self._mark()
         self._cleanup_leftover()
         self._known = d.top_windows()
@@ -71,9 +73,27 @@ class Runner:
         d.move_to(*cursor)
         self._mark()
         text = f"{max(done - 2, 0)} Aktionen in {self._clock() - start:.0f} s"
+        if badge:
+            badge_text, issue = compare(before, self._read_badge(badge, fg))
+            if issue:
+                self._problem(issue)
+            if badge_text:
+                log.info("Browser-Test %s", badge_text)
+                text = f"{badge_text}, {text}"
         if self._problems:
             text += f", {len(self._problems)} Auffälligkeit(en)"
         return Result("done", text, done, self._problems)
+
+    def _read_badge(self, badge, h):
+        if not badge:
+            return None
+        if self.desk.is_window(h) and self.desk.root(self.desk.foreground()) != h:
+            self.desk.activate(h)
+            self._sleep(0.5)
+        value = badge(h)
+        self._mark()
+        log.info("Zähler gelesen: %s", value if value is not None else "-")
+        return value
 
     def _bring_browser_to_front(self, processes):
         d = self.desk

@@ -32,6 +32,8 @@ class Config:
     browse_processes: tuple = ()
     browse_actions_max: int = 20
     browse_exclude: tuple = ()
+    badge_read: bool = True
+    badge_extension: str = ""
 
 
 def app_dir() -> Path:
@@ -69,7 +71,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         th = d.timer_hours
     values["timer_hours"] = _num(th)
 
-    for key in ("start_active", "verbose_log"):
+    for key in ("start_active", "verbose_log", "badge_read"):
         v = raw.get(key, getattr(d, key))
         if not isinstance(v, bool):
             warnings.append(f"{key}={v!r} ungültig (true oder false), nutze {getattr(d, key)}")
@@ -106,6 +108,12 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         warnings.append(f"browse_exclude={be!r} ungültig (Liste aus {', '.join(ACTION_IDS)}), nutze []")
         be = d.browse_exclude
     values["browse_exclude"] = tuple(dict.fromkeys(be))
+
+    bx = raw.get("badge_extension", d.badge_extension)
+    if not isinstance(bx, str):
+        warnings.append(f"badge_extension={bx!r} ungültig (Teil des Erweiterungsnamens oder \"\"), nutze \"\"")
+        bx = d.badge_extension
+    values["badge_extension"] = bx.strip()
 
     unknown = sorted(set(raw) - set(values))
     if unknown:

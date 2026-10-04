@@ -111,7 +111,11 @@ class Win32Api:
         if self._runner is None:
             from .browse_runner import Runner
             self._runner = Runner(Desktop())
-        return self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log)
+        badge = None
+        if cfg.badge_read:
+            from .badge_win import read_badge
+            badge = lambda h: read_badge(h, cfg.badge_extension)  # noqa: E731
+        return self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log, badge)
 
     def tick(self) -> int:
         return kernel32.GetTickCount()
@@ -271,6 +275,14 @@ def selftest() -> int:
         h = desk.find_browser(BrowserNames())
         lines.append(f"[INFO] Browser-Test würde nutzen: {desk.process_name(h) if h else '-'}"
                      f"{' – ' + desk.title(h)[:60] if h else ''}")
+        if h:
+            try:
+                from .badge_win import read_badge, toolbar_buttons
+                for name, help_text, cls, rect in toolbar_buttons(h):
+                    lines.append(f"[INFO]   Button: {name!r} Tooltip={help_text!r} Klasse={cls!r} {rect}")
+                lines.append(f"[INFO] Zähler (automatisch): {read_badge(h)}")
+            except Exception as e:
+                check("UI Automation", False, repr(e), essential=False)
         check("EnumWindows", len(desk.top_windows()) >= 0, essential=False)
     except Exception as e:
         check("Fensterfunktionen", False, repr(e), essential=False)

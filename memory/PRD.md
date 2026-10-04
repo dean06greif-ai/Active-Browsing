@@ -7,3 +7,8 @@ Problem: Browser-Test erkannte eigenen Browser (power.exe) nicht, explorer.exe a
 - 50 pytest-Tests grün; Code in /app/awaketoggle_fix (+ fix.patch)
 ## Backlog
 - Auf echtem Windows mit Power Browser prüfen (--selftest zeigt erkanntes Fenster)
+## Erweiterungs-Zähler (Juni 2026)
+- badge.py (Zahl parsen/vergleichen), badge_win.py (UI Automation via comtypes, Fallback Windows-OCR per PowerShell auf Button-Bereich)
+- Vor/nach jedem Browser-Test lesen, Tooltip "Zähler X → Y", Auffälligkeit wenn nicht gestiegen
+- config: badge_read (true), badge_extension (""=auto); Tray-Schalter; --selftest listet Buttons
+- 52 Tests grün; auf echtem Windows ungetestet

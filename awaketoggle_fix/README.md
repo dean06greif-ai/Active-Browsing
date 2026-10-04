@@ -74,6 +74,8 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex, `power.exe` und jedes Programm mit „browser“ oder „power…“ im Namen (außer PowerShell/PowerToys). Wird keiner gefunden, wird das oberste normale Programmfenster genommen (Explorer/Taskleiste/Startmenü und unsichtbare Windows-Fenster werden ignoriert) |
 | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
 | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
+| `badge_read` | `true` / `false` | Zähler (Badge) einer Erweiterung vor und nach jedem Browser-Test lesen |
+| `badge_extension` | Text | Teil des Erweiterungsnamens (Tooltip), z. B. `"Rewards"`; leer = erste Erweiterung mit Zahl |
 
 Nach Änderungen von Hand: Menü → *Konfiguration neu laden*. Ungültige Werte werden durch Standardwerte ersetzt und
 im Protokoll gemeldet; eine unlesbare Datei wird als `config.invalid.json` gesichert.
@@ -153,6 +155,12 @@ F12, Strg+Shift+I, Alt+Shift+I, Strg+D, Strg+Shift+D, Strg+Shift+V, Strg+Shift+L
 - **Sobald Sie Maus oder Tastatur benutzen, bricht der Durchlauf sofort ab** (Leerlaufzähler, eigene Eingaben
   werden herausgerechnet). Offen gebliebene Testfenster werden beim nächsten Durchlauf geschlossen.
 - Ausschalten, Bildschirmsperre und Beenden stoppen den Durchlauf ebenfalls.
+
+**Erweiterungs-Zähler:** Vor und nach jedem Durchlauf wird die Zahl auf einem Erweiterungs-Symbol oben rechts
+gelesen – zuerst über UI Automation (Name/Tooltip des Buttons), sonst per Windows-Texterkennung (OCR) auf dem
+Button. Tooltip: `Zähler 698 → 712, …`; ist er nicht gestiegen, steht `Zähler nicht gestiegen` als Auffälligkeit
+im Protokoll. `python -m awaketoggle --selftest` listet alle gefundenen Buttons mit Namen – den passenden Namen
+in `badge_extension` eintragen, falls automatisch die falsche Erweiterung gewählt wird.
 
 **Probleme sehen:** Im Protokoll stehen Start, Ende und Dauer jedes Durchlaufs sowie Auffälligkeiten als `WARNING`:
 `Langsam: 7.3 s (Suche 'wetter 4711')`, `Keine Reaktion nach 15 s (...)` (Fenstertitel hat sich nach Enter nicht

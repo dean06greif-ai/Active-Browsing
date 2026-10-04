@@ -1,5 +1,5 @@
 diff --git a/README.md b/README.md
-index 93ec91c..5195496 100644
+index 93ec91c..fbeabe3 100644
 --- a/README.md
 +++ b/README.md
 @@ -35,7 +35,8 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut,
@@ -12,7 +12,7 @@ index 93ec91c..5195496 100644
    - *Automatisch abschalten* – nie, nach 1, 4 oder 8 Stunden (Timer startet beim Einschalten)
    - *Beim Programmstart aktivieren*
    - *Mit Windows starten* – legt eine Verknüpfung im Autostart-Ordner an (`shell:startup`), keine Registry
-@@ -63,14 +64,14 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
+@@ -63,16 +64,18 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
  
  | Schlüssel | Werte | Bedeutung |
  |---|---|---|
@@ -28,7 +28,176 @@ index 93ec91c..5195496 100644
 +| `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex, `power.exe` und jedes Programm mit „browser“ oder „power…“ im Namen (außer PowerShell/PowerToys). Wird keiner gefunden, wird das oberste normale Programmfenster genommen (Explorer/Taskleiste/Startmenü und unsichtbare Windows-Fenster werden ignoriert) |
  | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
  | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
++| `badge_read` | `true` / `false` | Zähler (Badge) einer Erweiterung vor und nach jedem Browser-Test lesen |
++| `badge_extension` | Text | Teil des Erweiterungsnamens (Tooltip), z. B. `"Rewards"`; leer = erste Erweiterung mit Zahl |
  
+ Nach Änderungen von Hand: Menü → *Konfiguration neu laden*. Ungültige Werte werden durch Standardwerte ersetzt und
+ im Protokoll gemeldet; eine unlesbare Datei wird als `config.invalid.json` gesichert.
+@@ -153,6 +156,12 @@ F12, Strg+Shift+I, Alt+Shift+I, Strg+D, Strg+Shift+D, Strg+Shift+V, Strg+Shift+L
+   werden herausgerechnet). Offen gebliebene Testfenster werden beim nächsten Durchlauf geschlossen.
+ - Ausschalten, Bildschirmsperre und Beenden stoppen den Durchlauf ebenfalls.
+ 
++**Erweiterungs-Zähler:** Vor und nach jedem Durchlauf wird die Zahl auf einem Erweiterungs-Symbol oben rechts
++gelesen – zuerst über UI Automation (Name/Tooltip des Buttons), sonst per Windows-Texterkennung (OCR) auf dem
++Button. Tooltip: `Zähler 698 → 712, …`; ist er nicht gestiegen, steht `Zähler nicht gestiegen` als Auffälligkeit
++im Protokoll. `python -m awaketoggle --selftest` listet alle gefundenen Buttons mit Namen – den passenden Namen
++in `badge_extension` eintragen, falls automatisch die falsche Erweiterung gewählt wird.
++
+ **Probleme sehen:** Im Protokoll stehen Start, Ende und Dauer jedes Durchlaufs sowie Auffälligkeiten als `WARNING`:
+ `Langsam: 7.3 s (Suche 'wetter 4711')`, `Keine Reaktion nach 15 s (...)` (Fenstertitel hat sich nach Enter nicht
+ geändert), Popups, nicht erkannte neue Fenster. Mit `verbose_log: true` wird jede einzelne Aktion protokolliert.
+diff --git a/awaketoggle/badge.py b/awaketoggle/badge.py
+new file mode 100644
+index 0000000..4fce2a9
+--- /dev/null
++++ b/awaketoggle/badge.py
+@@ -0,0 +1,27 @@
++"""Zähler (Badge) einer Browser-Erweiterung: Zahl aus Text holen und vorher/nachher vergleichen."""
++import re
++
++_NUM = re.compile(r"(\d+(?:[.,]\d+)?)\s*([kKmM])?(?![\w])")
++
++
++def parse_number(text):
++    """Erste Zahl im Text, z. B. '698', '1.2k', 'Punkte: 1,5M'; None wenn keine."""
++    m = _NUM.search(text or "")
++    if not m:
++        return None
++    raw, suffix = m.group(1), (m.group(2) or "").lower()
++    if suffix:
++        return float(raw.replace(",", ".")) * (1000 if suffix == "k" else 1_000_000)
++    return int(raw.replace(".", "").replace(",", ""))
++
++
++def compare(before, after):
++    """Liefert (Text für Tooltip/Protokoll, Auffälligkeit oder None)."""
++    if before is None and after is None:
++        return "", None
++    text = f"Zähler {before if before is not None else '?'} → {after if after is not None else '?'}"
++    if before is None or after is None:
++        return text, "Zähler konnte nicht gelesen werden"
++    if after <= before:
++        return text, f"Zähler nicht gestiegen ({before} → {after})"
++    return text, None
+diff --git a/awaketoggle/badge_win.py b/awaketoggle/badge_win.py
+new file mode 100644
+index 0000000..b53381f
+--- /dev/null
++++ b/awaketoggle/badge_win.py
+@@ -0,0 +1,113 @@
++"""Zähler einer Erweiterung von außen lesen: UI Automation (Name/Tooltip), sonst Windows-OCR auf den Button."""
++import logging
++import os
++import subprocess
++import tempfile
++
++from .badge import parse_number
++
++log = logging.getLogger(__name__)
++
++TOOLBAR_MAX_PX = 160
++OCR_SCALE = 5
++OCR_PS = r"""
++$ErrorActionPreference='Stop'
++Add-Type -AssemblyName System.Runtime.WindowsRuntime
++$null=[Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
++$null=[Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]
++$null=[Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics,ContentType=WindowsRuntime]
++$m=([System.WindowsRuntimeSystemExtensions].GetMethods()|?{$_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'})[0]
++function A($o,$t){$k=$m.MakeGenericMethod($t).Invoke($null,@($o));$k.Wait(-1)|Out-Null;$k.Result}
++$f=A ([Windows.Storage.StorageFile]::GetFileFromPathAsync($args[0])) ([Windows.Storage.StorageFile])
++$s=A ($f.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
++$d=A ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($s)) ([Windows.Graphics.Imaging.BitmapDecoder])
++$b=A ($d.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
++$e=[Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
++(A ($e.RecognizeAsync($b)) ([Windows.Media.Ocr.OcrResult])).Text
++"""
++
++_uia = None
++
++
++def _automation():
++    global _uia
++    import comtypes
++    import comtypes.client
++    try:
++        comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
++    except OSError:
++        pass
++    if _uia is None:
++        comtypes.client.GetModule("UIAutomationCore.dll")
++        from comtypes.gen.UIAutomationClient import CUIAutomation, IUIAutomation
++        _uia = comtypes.client.CreateObject(CUIAutomation, interface=IUIAutomation)
++    return _uia
++
++
++def toolbar_buttons(hwnd: int) -> list:
++    """Buttons oben im Browserfenster: [(Name, Hilfetext, Klasse, (l, t, r, b))]."""
++    from comtypes.gen.UIAutomationClient import (TreeScope_Descendants, UIA_ButtonControlTypeId,
++                                                 UIA_ControlTypePropertyId, UIA_MenuItemControlTypeId)
++    uia = _automation()
++    root = uia.ElementFromHandle(hwnd)
++    top = root.CurrentBoundingRectangle.top
++    cond = uia.CreateOrCondition(uia.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_ButtonControlTypeId),
++                                 uia.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_MenuItemControlTypeId))
++    found = root.FindAll(TreeScope_Descendants, cond)
++    out = []
++    for i in range(found.Length):
++        e = found.GetElement(i)
++        r = e.CurrentBoundingRectangle
++        if r.right - r.left <= 0 or r.top - top > TOOLBAR_MAX_PX:
++            continue
++        out.append((e.CurrentName or "", e.CurrentHelpText or "", e.CurrentClassName or "",
++                    (r.left, r.top, r.right, r.bottom)))
++    return out
++
++
++def _ocr(rect) -> str:
++    from PIL import ImageGrab, ImageOps
++    img = ImageGrab.grab(bbox=rect, all_screens=True).convert("L")
++    img = ImageOps.autocontrast(img.resize((img.width * OCR_SCALE, img.height * OCR_SCALE)))
++    path = os.path.join(tempfile.gettempdir(), "AwakeToggle-badge.png")
++    img.save(path)
++    out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OCR_PS, path],
++                         capture_output=True, text=True, timeout=30,
++                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
++    if out.returncode:
++        log.debug("OCR fehlgeschlagen: %s", out.stderr.strip()[:300])
++    return out.stdout.strip()
++
++
++def _is_extension(name, help_text, cls) -> bool:
++    return "toolbaraction" in cls.lower() or "extension" in cls.lower()
++
++
++def read_badge(hwnd: int, extension: str = ""):
++    """Zahl des Zählers oder None. extension = Teil des Erweiterungsnamens (leer = automatisch)."""
++    try:
++        buttons = toolbar_buttons(hwnd)
++    except Exception:
++        log.exception("UI Automation nicht verfügbar")
++        return None
++    want = extension.lower()
++    if want:
++        buttons = [b for b in buttons if want in b[0].lower() or want in b[1].lower()]
++    else:
++        ext = [b for b in buttons if _is_extension(*b[:3])]
++        buttons = ext or buttons
++    for name, help_text, _, _ in buttons:
++        for text in (name, help_text):
++            n = parse_number(text)
++            if n is not None:
++                return n
++    targets = buttons if want else [b for b in buttons if _is_extension(*b[:3])]
++    for b in targets:
++        try:
++            n = parse_number(_ocr(b[3]))
++        except Exception:
++            log.exception("OCR auf Erweiterungs-Button fehlgeschlagen")
++            return None
++        if n is not None:
++            return n
++    return None
 diff --git a/awaketoggle/browse.py b/awaketoggle/browse.py
 index 67166bf..85eb7ab 100644
 --- a/awaketoggle/browse.py
@@ -59,18 +228,65 @@ index 67166bf..85eb7ab 100644
  MAX_WINDOWS = 2
  LOAD_TIMEOUT_S = 15.0
 diff --git a/awaketoggle/browse_runner.py b/awaketoggle/browse_runner.py
-index 3e8b9b0..6606fa9 100644
+index 3e8b9b0..fea3faa 100644
 --- a/awaketoggle/browse_runner.py
 +++ b/awaketoggle/browse_runner.py
-@@ -45,6 +45,7 @@ class Runner:
+@@ -4,6 +4,7 @@ import random
+ import time
+ from dataclasses import dataclass, field
+ 
++from .badge import compare
+ from .browse import BrowserNames, combo
+ 
+ log = logging.getLogger(__name__)
+@@ -39,14 +40,16 @@ class Runner:
+ 
+     # ---------- Ablauf ----------
+ 
+-    def run(self, plan, processes, cancel=lambda: False, verbose=False) -> Result:
++    def run(self, plan, processes, cancel=lambda: False, verbose=False, badge=None) -> Result:
+         d = self.desk
+         processes = BrowserNames(processes)
          fg = self._bring_browser_to_front(processes)
          if isinstance(fg, Result):
              return fg
 +        processes = BrowserNames(tuple(processes.extra) + (d.process_name(fg),))
          self._processes, self._cancel, self._base = processes, cancel, fg
          self._problems, self._stack, self._opened = [], [], False
++        before = self._read_badge(badge, fg)
          self._mark()
-@@ -81,6 +82,8 @@ class Runner:
+         self._cleanup_leftover()
+         self._known = d.top_windows()
+@@ -70,10 +73,28 @@ class Runner:
+         d.move_to(*cursor)
+         self._mark()
+         text = f"{max(done - 2, 0)} Aktionen in {self._clock() - start:.0f} s"
++        if badge:
++            badge_text, issue = compare(before, self._read_badge(badge, fg))
++            if issue:
++                self._problem(issue)
++            if badge_text:
++                log.info("Browser-Test %s", badge_text)
++                text = f"{badge_text}, {text}"
+         if self._problems:
+             text += f", {len(self._problems)} Auffälligkeit(en)"
+         return Result("done", text, done, self._problems)
+ 
++    def _read_badge(self, badge, h):
++        if not badge:
++            return None
++        if self.desk.is_window(h) and self.desk.root(self.desk.foreground()) != h:
++            self.desk.activate(h)
++            self._sleep(0.5)
++        value = badge(h)
++        self._mark()
++        log.info("Zähler gelesen: %s", value if value is not None else "-")
++        return value
++
+     def _bring_browser_to_front(self, processes):
+         d = self.desk
+         fg = d.root(d.foreground())
+@@ -81,6 +102,8 @@ class Runner:
          if fg and proc in processes:
              return fg
          h = d.find_browser(processes)
@@ -80,7 +296,7 @@ index 3e8b9b0..6606fa9 100644
              return Result("skipped", f"kein Browserfenster gefunden (vorne: {proc or '-'}) – "
                                       "Programmname in browse_processes eintragen")
 diff --git a/awaketoggle/config.py b/awaketoggle/config.py
-index ba8060f..2b7430e 100644
+index ba8060f..545a6e8 100644
 --- a/awaketoggle/config.py
 +++ b/awaketoggle/config.py
 @@ -12,11 +12,11 @@ log = logging.getLogger(__name__)
@@ -97,6 +313,37 @@ index ba8060f..2b7430e 100644
  TIMER_MAX_HOURS = 24
  
  
+@@ -32,6 +32,8 @@ class Config:
+     browse_processes: tuple = ()
+     browse_actions_max: int = 20
+     browse_exclude: tuple = ()
++    badge_read: bool = True
++    badge_extension: str = ""
+ 
+ 
+ def app_dir() -> Path:
+@@ -69,7 +71,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
+         th = d.timer_hours
+     values["timer_hours"] = _num(th)
+ 
+-    for key in ("start_active", "verbose_log"):
++    for key in ("start_active", "verbose_log", "badge_read"):
+         v = raw.get(key, getattr(d, key))
+         if not isinstance(v, bool):
+             warnings.append(f"{key}={v!r} ungültig (true oder false), nutze {getattr(d, key)}")
+@@ -107,6 +109,12 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
+         be = d.browse_exclude
+     values["browse_exclude"] = tuple(dict.fromkeys(be))
+ 
++    bx = raw.get("badge_extension", d.badge_extension)
++    if not isinstance(bx, str):
++        warnings.append(f"badge_extension={bx!r} ungültig (Teil des Erweiterungsnamens oder \"\"), nutze \"\"")
++        bx = d.badge_extension
++    values["badge_extension"] = bx.strip()
++
+     unknown = sorted(set(raw) - set(values))
+     if unknown:
+         warnings.append(f"Unbekannte Schlüssel ignoriert: {', '.join(unknown)}")
 diff --git a/awaketoggle/core.py b/awaketoggle/core.py
 index 3ae3585..6ed10c2 100644
 --- a/awaketoggle/core.py
@@ -134,7 +381,7 @@ index 3ae3585..6ed10c2 100644
          if action == LOCKED:
              if self._status.text != TEXT_LOCKED:
 diff --git a/awaketoggle/tray.py b/awaketoggle/tray.py
-index 1f03161..4cbe5b5 100644
+index 1f03161..a85cf2c 100644
 --- a/awaketoggle/tray.py
 +++ b/awaketoggle/tray.py
 @@ -1,5 +1,6 @@
@@ -178,7 +425,7 @@ index 1f03161..4cbe5b5 100644
      def _toggle_autostart(self) -> None:
          try:
              if autostart.is_enabled():
-@@ -123,6 +151,7 @@ class TrayApp:
+@@ -123,16 +151,23 @@ class TrayApp:
          return Menu(
              Item("Aktiv", self._toggle, checked=lambda i: self.engine.active, default=True),
              Item(lambda i: self.engine.status.text, lambda: None, enabled=False),
@@ -186,7 +433,12 @@ index 1f03161..4cbe5b5 100644
              Menu.SEPARATOR,
              Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()],
                                  Menu.SEPARATOR, *[self._variant(v) for v in VARIANTS])),
-@@ -132,7 +161,10 @@ class TrayApp:
++            Item("Erweiterungs-Zähler vorher/nachher lesen",
++                 lambda: self._change(badge_read=not self._cfg().badge_read),
++                 checked=lambda i: self._cfg().badge_read, enabled=lambda i: self._cfg().signal == "browse"),
+             Item("Browser-Test Länge", Menu(*[self._radio(browse_length_label(n), "browse_actions_max", n)
+                                               for n in BROWSE_LENGTH_CHOICES],
+                                             self._custom("browse_actions_max", BROWSE_LENGTH_CHOICES,
                                                           browse_length_label)),
                   enabled=lambda i: self._cfg().signal == "browse"),
              Item("Abstand", Menu(*[self._radio(interval_label(s), "interval_seconds", s) for s in INTERVAL_CHOICES],
@@ -209,10 +461,23 @@ index f932594..fd858dc 100644
 -    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), 5.0)
 +    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), min(base, 5.0))
 diff --git a/awaketoggle/win32.py b/awaketoggle/win32.py
-index 7766e97..d6270f4 100644
+index 7766e97..cea5c84 100644
 --- a/awaketoggle/win32.py
 +++ b/awaketoggle/win32.py
-@@ -267,6 +267,10 @@ def selftest() -> int:
+@@ -111,7 +111,11 @@ class Win32Api:
+         if self._runner is None:
+             from .browse_runner import Runner
+             self._runner = Runner(Desktop())
+-        return self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log)
++        badge = None
++        if cfg.badge_read:
++            from .badge_win import read_badge
++            badge = lambda h: read_badge(h, cfg.badge_extension)  # noqa: E731
++        return self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log, badge)
+ 
+     def tick(self) -> int:
+         return kernel32.GetTickCount()
+@@ -267,6 +271,18 @@ def selftest() -> int:
          desk = Desktop()
          fg = desk.root(desk.foreground())
          lines.append(f"[INFO] Vordergrundprogramm: {desk.process_name(fg) if fg else '-'}")
@@ -220,10 +485,18 @@ index 7766e97..d6270f4 100644
 +        h = desk.find_browser(BrowserNames())
 +        lines.append(f"[INFO] Browser-Test würde nutzen: {desk.process_name(h) if h else '-'}"
 +                     f"{' – ' + desk.title(h)[:60] if h else ''}")
++        if h:
++            try:
++                from .badge_win import read_badge, toolbar_buttons
++                for name, help_text, cls, rect in toolbar_buttons(h):
++                    lines.append(f"[INFO]   Button: {name!r} Tooltip={help_text!r} Klasse={cls!r} {rect}")
++                lines.append(f"[INFO] Zähler (automatisch): {read_badge(h)}")
++            except Exception as e:
++                check("UI Automation", False, repr(e), essential=False)
          check("EnumWindows", len(desk.top_windows()) >= 0, essential=False)
      except Exception as e:
          check("Fensterfunktionen", False, repr(e), essential=False)
-@@ -296,6 +300,14 @@ SM_SWAPBUTTON = 23
+@@ -296,6 +312,14 @@ SM_SWAPBUTTON = 23
  SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 76, 77, 78, 79
  EXTENDED_VKS = frozenset({0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x6F})
  MODIFIER_VKS = frozenset({0x10, 0x11, 0x12})
@@ -238,7 +511,7 @@ index 7766e97..d6270f4 100644
  
  WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
  user32.GetForegroundWindow.argtypes = []
-@@ -337,6 +349,14 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
+@@ -337,6 +361,14 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
  kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
                                                  ctypes.POINTER(wintypes.DWORD)]
  kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
@@ -253,7 +526,7 @@ index 7766e97..d6270f4 100644
  try:
      user32.GetDpiForWindow.argtypes = [wintypes.HWND]
      user32.GetDpiForWindow.restype = wintypes.UINT
-@@ -427,20 +447,38 @@ class Desktop:
+@@ -427,20 +459,38 @@ class Desktop:
          user32.EnumWindows(WNDENUMPROC(cb), 0)
          return found
  
@@ -301,8 +574,16 @@ index 7766e97..d6270f4 100644
  
      def activate(self, h: int) -> bool:
          if user32.IsIconic(h):
+diff --git a/requirements.txt b/requirements.txt
+index 61a733d..d3ff12d 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,2 +1,3 @@
+ pystray==0.19.5
+ Pillow>=11.0,<13
++comtypes>=1.4; sys_platform == "win32"
 diff --git a/tests/test_browse.py b/tests/test_browse.py
-index 92679a2..63e1978 100644
+index 92679a2..e90c6dd 100644
 --- a/tests/test_browse.py
 +++ b/tests/test_browse.py
 @@ -1,7 +1,7 @@
@@ -314,7 +595,7 @@ index 92679a2..63e1978 100644
  from awaketoggle.browse_runner import Runner
  from awaketoggle.config import Config
  from tests.test_core import make
-@@ -355,3 +355,18 @@ def test_config_browse_keys(tmp_path):
+@@ -355,3 +355,40 @@ def test_config_browse_keys(tmp_path):
      cfg, warnings = load(p)
      assert len(warnings) == 3 and cfg == Config()
      assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}
@@ -333,10 +614,41 @@ index 92679a2..63e1978 100644
 +    desk.find_browser = lambda names: USER
 +    r = Runner(desk, sleep=desk.sleep, clock=desk.clock)
 +    assert r._bring_browser_to_front(BrowserNames()) == USER
++
++
++def test_badge_parse_and_compare():
++    from awaketoggle.badge import compare, parse_number
++    assert parse_number("698") == 698
++    assert parse_number("Rewards: 1.2k") == 1200
++    assert parse_number("Punkte 1.234") == 1234
++    assert parse_number("Meine Erweiterung") is None
++    assert compare(698, 712) == ("Zähler 698 → 712", None)
++    assert compare(698, 698)[1].startswith("Zähler nicht gestiegen")
++    assert compare(None, None) == ("", None)
++
++
++def test_runner_reads_badge_before_and_after():
++    desk = FakeDesk()
++    values = iter([698, 698])
++    r = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(1))
++    plan = make_scenario(Config(browse_actions_max=3), random.Random(1))
++    res = r.run(plan, (), badge=lambda h: next(values))
++    assert res.status == "done"
++    assert "Zähler 698 → 698" in res.text
++    assert any("nicht gestiegen" in p for p in res.problems)
 diff --git a/tests/test_config.py b/tests/test_config.py
-index 798b525..97597c3 100644
+index 798b525..e1d456f 100644
 --- a/tests/test_config.py
 +++ b/tests/test_config.py
+@@ -14,7 +14,7 @@ def test_creates_defaults(tmp_path):
+     assert json.loads(p.read_text("utf-8")) == {
+         "interval_seconds": 60, "signal": "mouse", "timer_hours": 0, "start_active": False, "verbose_log": False,
+         "random_variants": ["mouse", "scroll", "keys"], "jitter_percent": 0,
+-        "browse_processes": [], "browse_actions_max": 20, "browse_exclude": []}
++        "browse_processes": [], "browse_actions_max": 20, "browse_exclude": [], "badge_read": True, "badge_extension": ""}
+ 
+ 
+ def test_roundtrip(tmp_path):
 @@ -27,7 +27,7 @@ def test_roundtrip(tmp_path):
  
  def test_invalid_values_fall_back(tmp_path):
@@ -364,3 +676,15 @@ index 9c602df..0b330b0 100644
 +    assert len(api.sent) == 1
 +    eng.step()
 +    assert len(api.sent) == 1
+diff --git a/tools/build.ps1 b/tools/build.ps1
+index d5ba98d..b3ff358 100644
+--- a/tools/build.ps1
++++ b/tools/build.ps1
+@@ -8,6 +8,7 @@ python -m PyInstaller --noconfirm --clean --onefile --noconsole `
+     --name AwakeToggle `
+     --icon build/awaketoggle.ico `
+     --hidden-import pystray._win32 `
++    --collect-submodules comtypes `
+     --exclude-module tkinter `
+     --exclude-module unittest `
+     --exclude-module pydoc `
