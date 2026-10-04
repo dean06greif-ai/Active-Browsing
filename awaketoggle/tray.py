@@ -108,6 +108,15 @@ class TrayApp:
             self._notify(f"Autostart konnte nicht geändert werden: {e}")
         self.icon.update_menu()
 
+    def _make_shortcuts(self) -> None:
+        try:
+            paths = autostart.create_desktop_and_startmenu()
+            log.info("Verknüpfungen angelegt: %s", ", ".join(map(str, paths)))
+            self._notify("Verknüpfung auf dem Desktop und im Startmenü angelegt.")
+        except Exception as e:
+            log.exception("Verknüpfungen konnten nicht angelegt werden")
+            self._notify(f"Verknüpfung konnte nicht angelegt werden: {e}")
+
     def _reload(self) -> None:
         cfg, warnings = config_mod.load(self.cfg_path)
         for w in warnings:
@@ -170,12 +179,18 @@ class TrayApp:
                                      target=self._ask_interval, daemon=True).start()))),
             Item("Abstand variieren", Menu(*[self._radio(jitter_label(j), "jitter_percent", j) for j in JITTER_CHOICES],
                                            self._custom("jitter_percent", JITTER_CHOICES, jitter_label))),
+            Item(lambda i: f"Weg-Modus: Helligkeit {self._cfg().away_brightness} % + Stromsparen, "
+                           f"zurück: {self._cfg().back_brightness} %",
+                 lambda: self._change(away_power=not self._cfg().away_power),
+                 checked=lambda i: self._cfg().away_power),
             Item("Automatisch abschalten", Menu(*[self._radio(timer_label(h), "timer_hours", h) for h in TIMER_CHOICES],
                                                 self._custom("timer_hours", TIMER_CHOICES, timer_label))),
             Menu.SEPARATOR,
             Item("Beim Programmstart aktivieren", lambda: self._change(start_active=not self._cfg().start_active),
                  checked=lambda i: self._cfg().start_active),
             Item("Mit Windows starten", self._toggle_autostart, checked=lambda i: autostart.is_enabled()),
+            Item("Verknüpfung auf Desktop + Startmenü anlegen",
+                 lambda: threading.Thread(target=self._make_shortcuts, daemon=True).start()),
             Item("Konfiguration öffnen", lambda: self._open(self.cfg_path)),
             Item("Konfiguration neu laden", self._reload),
             Item("Protokoll öffnen", lambda: self._open(self.log_path)),

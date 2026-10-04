@@ -35,6 +35,10 @@ class Config:
     browse_private_words: tuple = ()
     badge_read: bool = True
     badge_extension: str = ""
+    away_power: bool = True
+    away_brightness: int = 0
+    back_brightness: int = 50
+    away_energy_saver: bool = True
 
 
 def app_dir() -> Path:
@@ -72,7 +76,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         th = d.timer_hours
     values["timer_hours"] = _num(th)
 
-    for key in ("start_active", "verbose_log", "badge_read"):
+    for key in ("start_active", "verbose_log", "badge_read", "away_power", "away_energy_saver"):
         v = raw.get(key, getattr(d, key))
         if not isinstance(v, bool):
             warnings.append(f"{key}={v!r} ungültig (true oder false), nutze {getattr(d, key)}")
@@ -123,6 +127,13 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         warnings.append(f"badge_extension={bx!r} ungültig (Teil des Erweiterungsnamens oder \"\"), nutze \"\"")
         bx = d.badge_extension
     values["badge_extension"] = bx.strip()
+
+    for key in ("away_brightness", "back_brightness"):
+        v = raw.get(key, getattr(d, key))
+        if not _is_number(v) or not 0 <= v <= 100:
+            warnings.append(f"{key}={v!r} ungültig (0–100 %), nutze {getattr(d, key)}")
+            v = getattr(d, key)
+        values[key] = int(v)
 
     unknown = sorted(set(raw) - set(values))
     if unknown:

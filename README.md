@@ -14,7 +14,25 @@ Fenster und Tabs öffnen, zufällige Suchanfragen, lesen, scrollen, klicken, Tab
 | grün | an (wach halten + Signal) |
 | gelb | an, aber pausiert (Bildschirm gesperrt oder Signal ohne Wirkung) |
 
-## Installation
+## Installation (empfohlen: aus dem Quelltext, ein Doppelklick)
+
+Voraussetzung: Python 3.12 (bei der Installation „Add python.exe to PATH“ anhaken).
+
+1. Repo herunterladen/entpacken.
+2. **`Installieren.cmd` doppelklicken.** Das Skript
+   - installiert die Python-Pakete,
+   - baut `AwakeToggle.exe` (ohne Konsolenfenster),
+   - beendet ein evtl. laufendes AwakeToggle und kopiert die exe nach `%LOCALAPPDATA%\Programs\AwakeToggle\`,
+   - legt die Verknüpfung **„AwakeToggle“ auf dem Desktop und im Startmenü** an (eine vorhandene Autostart-Verknüpfung
+     wird mit aktualisiert) und startet das Programm.
+3. Ab jetzt einfach per Desktop-Symbol oder Startmenü starten – **VS Code und Terminal werden nicht mehr gebraucht.**
+   Das Programm läuft unsichtbar im Infobereich (Pfeil ^ unten rechts). Beenden über Rechtsklick → *Beenden*.
+
+Nach Code-Änderungen einfach erneut `Installieren.cmd` ausführen. Sollte der exe-Bau scheitern, legt das Skript die
+Verknüpfungen stattdessen auf `pythonw.exe main.py` an (läuft ebenfalls ohne Konsolenfenster).
+Entfernen: **`Deinstallieren.cmd`** (Einstellungen in `%LOCALAPPDATA%\AwakeToggle` bleiben erhalten).
+
+### Alternative: fertige exe
 
 1. Unter **Releases** die neueste `AwakeToggle.exe` herunterladen (optional mit `AwakeToggle.exe.sha256` prüfen:
    `Get-FileHash .\AwakeToggle.exe -Algorithm SHA256`).
@@ -37,9 +55,12 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut, 
   - *Abstand variieren* – nein, oder zufällig bis zu 10 / 25 / 50 % kürzer
   - *Jetzt testen* – startet sofort einen Durchlauf (schaltet bei Bedarf ein), ohne auf den Abstand zu warten
   - *Abstand* – 5 s, 10 s, 15 s, 30 s, 60 s, 2 min, 5 min oder *Eigener Wert eingeben …* (1–3600 s)
+  - *Weg-Modus* – solange das Programm für Sie arbeitet: Helligkeit 0 % + Stromsparmodus an; sobald Sie wieder da sind:
+    Helligkeit 50 % + Stromsparmodus aus (siehe unten)
   - *Automatisch abschalten* – nie, nach 1, 4 oder 8 Stunden (Timer startet beim Einschalten)
   - *Beim Programmstart aktivieren*
   - *Mit Windows starten* – legt eine Verknüpfung im Autostart-Ordner an (`shell:startup`), keine Registry
+  - *Verknüpfung auf Desktop + Startmenü anlegen* – falls Sie sie gelöscht haben
   - *Konfiguration öffnen / neu laden*, *Protokoll öffnen*, *Beenden*
 - Der Tooltip zeigt Status, letztes Signal und ggf. die Abschaltzeit.
 
@@ -59,7 +80,11 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
   "browse_processes": [],
   "browse_actions_max": 20,
   "browse_exclude": [],
-  "browse_private_words": []
+  "browse_private_words": [],
+  "away_power": true,
+  "away_brightness": 0,
+  "back_brightness": 50,
+  "away_energy_saver": true
 }
 ```
 
@@ -78,6 +103,10 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `badge_read` | `true` / `false` | Zähler (Badge) einer Erweiterung vor und nach jedem Browser-Test lesen |
 | `badge_extension` | Text | Teil des Erweiterungsnamens (Tooltip), z. B. `"Rewards"`; leer = erste Erweiterung mit Zahl |
 | `browse_private_words` | Liste von Titelwörtern | **zusätzliche** Wörter, an denen ein Inkognito-Fenster im Fenstertitel erkannt wird (immer erkannt: InPrivate, Incognito, Inkognito, Privater Modus, Private Browsing …). Nötig nur, wenn Ihr Browser ein eigenes Wort nutzt – `--selftest` zeigt alle Browserfenster mit Titel und „normal“/„Inkognito“ |
+| `away_power` | `true` / `false` | Weg-Modus an/aus |
+| `away_brightness` | 0–100 | Helligkeit in %, solange das Programm arbeitet |
+| `back_brightness` | 0–100 | Helligkeit in %, sobald Sie wieder da sind |
+| `away_energy_saver` | `true` / `false` | im Weg-Modus auch den Stromsparmodus einschalten |
 
 Nach Änderungen von Hand: Menü → *Konfiguration neu laden*. Ungültige Werte werden durch Standardwerte ersetzt und
 im Protokoll gemeldet; eine unlesbare Datei wird als `config.invalid.json` gesichert.
@@ -184,6 +213,25 @@ Der Tooltip zeigt das Ergebnis des letzten Durchlaufs.
 Abgestimmt auf die Edge-Tastenkürzel (Sammlungen, Plastischer Reader). Mit Chrome & Co. funktioniert der
 Großteil ebenso; nicht vorhandene Kürzel bewirken dort einfach nichts. Hinweis: Zoomstufen merkt sich der Browser pro
 Website, deshalb endet jede Zoom-Aktion mit Strg+0.
+
+## Weg-Modus (Helligkeit + Stromsparen)
+
+Sobald das Programm arbeitet (erstes Signal bzw. erster Browser-Test-Durchlauf, weil Sie lange genug nichts getan
+haben), schaltet es:
+
+- **Helligkeit auf 0 %** (`away_brightness`) – eingebaute Laptop-Anzeige über WMI, externe Monitore über DDC/CI
+  (muss im Monitor-Menü aktiviert sein; manche Monitore/Adapter unterstützen das nicht),
+- **Stromsparmodus an** (`away_energy_saver`) – Windows-Energiesparmodus (Schwelle auf 100 %) und Energiemodus
+  „Beste Energieeffizienz“.
+
+Zwischen den Durchläufen bleibt das so. **Sobald Sie Maus oder Tastatur benutzen** (geprüft alle 0,3 s, eigene
+Eingaben des Programms werden herausgerechnet), geht es sofort zurück: **Helligkeit 50 %** (`back_brightness`),
+Stromsparmodus aus (Ihre vorherige Einstellung wird wiederhergestellt). Ebenso beim Ausschalten und Beenden.
+Wird das Programm hart beendet (Task-Manager), setzt es beim nächsten Start alles zurück (`away_state.json`).
+Keine Administratorrechte nötig. Im Protokoll steht, welche Monitore sich einstellen ließen.
+
+Hinweis: Am Desktop-PC ohne Akku kann der Windows-Energiesparmodus je nach Windows-Version wirkungslos sein;
+der Energiemodus „Beste Energieeffizienz“ wirkt trotzdem. Was geklappt hat, steht im Protokoll.
 
 ## Funktionsweise
 

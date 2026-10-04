@@ -51,8 +51,10 @@ def decide(now: int, last_input: int, own_input: int | None, interval_ms: int, l
 
 
 class Engine:
-    def __init__(self, api, cfg: Config, on_status=None, clock=time.monotonic, sleep=time.sleep, rng=None):
+    def __init__(self, api, cfg: Config, on_status=None, clock=time.monotonic, sleep=time.sleep, rng=None,
+                 away=None):
         self._api = api
+        self._away = away
         self._cfg = cfg
         self.on_status = on_status
         self._clock = clock
@@ -156,7 +158,12 @@ class Engine:
             self._release()
             self._publish(Status("off", "Beendet"))
 
+    def _leave_away(self, reason: str) -> None:
+        if self._away:
+            self._away.leave(reason)
+
     def _release(self) -> None:
+        self._leave_away("beendet")
         if self._applied:
             self._api.set_awake(False)
             self._applied = False
@@ -190,6 +197,7 @@ class Engine:
         if active != self._applied:
             self._apply(active)
         if not active:
+            self._leave_away("ausgeschaltet")
             self._own_input = None
             reason = self._off_reason
             self._publish(Status("off", f"Aus ({reason})" if reason else "Aus",
@@ -207,6 +215,8 @@ class Engine:
         api = self._api
         if self._target_s is None:
             self._target_s = next_interval(cfg, self._rng)
+        if not cfg.away_power:
+            self._leave_away("Weg-Modus abgeschaltet")
         target = self._target_s
         locked = self._session_locked or api.is_locked()
         last = api.last_input_tick()
@@ -224,6 +234,7 @@ class Engine:
 
         wait_s = max(remaining_ms / 1000, MIN_WAIT_S)
         if action == USER_ACTIVE:
+            self._leave_away("Sie sind zurück")
             self._publish(Status("on", TEXT_USER, dl))
             return wait_s
         if action == WAIT:
@@ -231,6 +242,17 @@ class Engine:
                 self._publish(Status("on", "An", dl))
             return wait_s
 
+        away = self._away if cfg.away_power else None
+        if away:
+            away.enter(cfg)
+        try:
+            return self._send(cfg, dl, last)
+        finally:
+            if away:
+                away.done()
+
+    def _send(self, cfg: Config, dl, last: int) -> float:
+        api = self._api
         if cfg.signal == "browse":
             return self._browse(cfg, dl)
         plan = make_plan(cfg, self._rng)
@@ -270,6 +292,8 @@ class Engine:
             self._publish(Status("on", f"An, Browser-Test {stamp}: {result.text}", dl))
         elif result.status == "aborted":
             self._own_input = None
+            if result.text == "Sie sind aktiv":
+                self._leave_away("Sie sind zurück")
             self._publish(Status("on", f"An, Browser-Test {stamp} abgebrochen ({result.text})", dl))
         else:
             self._own_input = None

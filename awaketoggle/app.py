@@ -44,7 +44,17 @@ def main(argv=None) -> int:
         log.warning(w)
     log.info("Konfiguration: %s", asdict(cfg))
 
-    engine = Engine(win32.Win32Api(), cfg)
+    from .away import Away
+    from .power_win import Power
+    power = Power(base / "away_state.json")
+    try:
+        power.recover(cfg)
+    except Exception:
+        log.exception("Weg-Modus: Zurücksetzen beim Start fehlgeschlagen")
+    api = win32.Win32Api()
+    away = Away(power, api)
+    engine = Engine(api, cfg, away=away)
+    away.on_back = engine.poke
     tray = TrayApp(engine, cfg_path, log_path)
 
     def stop(reason: str) -> None:
