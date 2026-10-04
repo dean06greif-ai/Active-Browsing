@@ -81,10 +81,10 @@ index 0000000..4fce2a9
 +    return text, None
 diff --git a/awaketoggle/badge_win.py b/awaketoggle/badge_win.py
 new file mode 100644
-index 0000000..76d3a08
+index 0000000..5af5e4c
 --- /dev/null
 +++ b/awaketoggle/badge_win.py
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,145 @@
 +"""Zähler einer Erweiterung von außen lesen: UI Automation (Name/Tooltip), sonst Windows-OCR auf den Button."""
 +import logging
 +import os
@@ -148,7 +148,7 @@ index 0000000..76d3a08
 +        if r.right - r.left <= 0 or r.top - top > TOOLBAR_MAX_PX:
 +            continue
 +        out.append((e.CurrentName or "", e.CurrentHelpText or "", e.CurrentClassName or "",
-+                    (r.left, r.top, r.right, r.bottom)))
++                    (r.left, r.top, r.right, r.bottom), e))
 +    return out
 +
 +
@@ -156,6 +156,8 @@ index 0000000..76d3a08
 +    from PIL import ImageGrab, ImageOps
 +    img = ImageGrab.grab(bbox=rect, all_screens=True).convert("L")
 +    img = ImageOps.autocontrast(img.resize((img.width * OCR_SCALE, img.height * OCR_SCALE)))
++    if sum(img.getdata()) / (img.width * img.height) < 128:
++        img = ImageOps.invert(img)
 +    path = os.path.join(tempfile.gettempdir(), "AwakeToggle-badge.png")
 +    img.save(path)
 +    out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OCR_PS, path],
@@ -166,8 +168,32 @@ index 0000000..76d3a08
 +    return out.stdout.strip()
 +
 +
-+def _is_extension(name, help_text, cls) -> bool:
-+    return "toolbaraction" in cls.lower() or "extension" in cls.lower()
++COUNTER_HINTS = ("points", "coin", "badge", "counter", "actionview")
++
++
++def _rank(button) -> int:
++    """0 = sicher ein Zähler-Button, höher = unwahrscheinlicher, None = kein Kandidat."""
++    name, cls = button[0].lower(), button[2].lower()
++    for i, hint in enumerate(COUNTER_HINTS):
++        if hint in cls:
++            return i
++    if "coin" in name or "point" in name:
++        return len(COUNTER_HINTS)
++    return None
++
++
++def _candidates(buttons) -> list:
++    ranked = [(r, i, b) for i, b in enumerate(buttons) if (r := _rank(b)) is not None]
++    return [b for _, _, b in sorted(ranked)]
++
++
++def _child_texts(element) -> list:
++    uia = _automation()
++    kids = element.FindAll(TREE_SCOPE_DESCENDANTS, uia.CreateTrueCondition())
++    return [kids.GetElement(i).CurrentName or "" for i in range(kids.Length)]
++
++
++TREE_SCOPE_DESCENDANTS = 4
 +
 +
 +def read_badge(hwnd: int, extension: str = ""):
@@ -180,21 +206,27 @@ index 0000000..76d3a08
 +    want = extension.lower()
 +    if want:
 +        buttons = [b for b in buttons if want in b[0].lower() or want in b[1].lower()]
++        buttons = _candidates(buttons) + [b for b in buttons if _rank(b) is None]
 +    else:
-+        ext = [b for b in buttons if _is_extension(*b[:3])]
-+        buttons = ext or buttons
-+    for name, help_text, _, _ in buttons:
-+        for text in (name, help_text):
++        buttons = _candidates(buttons)
++    for name, help_text, _, _, element in buttons:
++        texts = [name, help_text]
++        try:
++            texts += _child_texts(element)
++        except Exception:
++            log.debug("Unterelemente nicht lesbar", exc_info=True)
++        for text in texts:
 +            n = parse_number(text)
 +            if n is not None:
 +                return n
-+    targets = buttons if want else [b for b in buttons if _is_extension(*b[:3])]
-+    for b in targets:
++    for b in buttons:
 +        try:
-+            n = parse_number(_ocr(b[3]))
++            text = _ocr(b[3])
 +        except Exception:
-+            log.exception("OCR auf Erweiterungs-Button fehlgeschlagen")
++            log.exception("OCR auf Zähler-Button fehlgeschlagen")
 +            return None
++        log.debug("OCR %r: %r", b[0], text)
++        n = parse_number(text)
 +        if n is not None:
 +            return n
 +    return None
@@ -461,7 +493,7 @@ index f932594..fd858dc 100644
 -    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), 5.0)
 +    return max(rng.uniform(base * (1 - cfg.jitter_percent / 100), base), min(base, 5.0))
 diff --git a/awaketoggle/win32.py b/awaketoggle/win32.py
-index 7766e97..cea5c84 100644
+index 7766e97..83e0220 100644
 --- a/awaketoggle/win32.py
 +++ b/awaketoggle/win32.py
 @@ -111,7 +111,11 @@ class Win32Api:
@@ -477,7 +509,7 @@ index 7766e97..cea5c84 100644
  
      def tick(self) -> int:
          return kernel32.GetTickCount()
-@@ -267,6 +271,18 @@ def selftest() -> int:
+@@ -267,6 +271,21 @@ def selftest() -> int:
          desk = Desktop()
          fg = desk.root(desk.foreground())
          lines.append(f"[INFO] Vordergrundprogramm: {desk.process_name(fg) if fg else '-'}")
@@ -488,15 +520,18 @@ index 7766e97..cea5c84 100644
 +        if h:
 +            try:
 +                from .badge_win import read_badge, toolbar_buttons
-+                for name, help_text, cls, rect in toolbar_buttons(h):
++                for name, help_text, cls, rect, _ in toolbar_buttons(h):
 +                    lines.append(f"[INFO]   Button: {name!r} Tooltip={help_text!r} Klasse={cls!r} {rect}")
++                from .badge_win import _candidates, _child_texts
++                for name, _, cls, _, el in _candidates(toolbar_buttons(h)):
++                    lines.append(f"[INFO] Zähler-Kandidat: {name!r} ({cls}) Unterelemente={_child_texts(el)!r}")
 +                lines.append(f"[INFO] Zähler (automatisch): {read_badge(h)}")
 +            except Exception as e:
 +                check("UI Automation", False, repr(e), essential=False)
          check("EnumWindows", len(desk.top_windows()) >= 0, essential=False)
      except Exception as e:
          check("Fensterfunktionen", False, repr(e), essential=False)
-@@ -296,6 +312,14 @@ SM_SWAPBUTTON = 23
+@@ -296,6 +315,14 @@ SM_SWAPBUTTON = 23
  SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 76, 77, 78, 79
  EXTENDED_VKS = frozenset({0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x6F})
  MODIFIER_VKS = frozenset({0x10, 0x11, 0x12})
@@ -511,7 +546,7 @@ index 7766e97..cea5c84 100644
  
  WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
  user32.GetForegroundWindow.argtypes = []
-@@ -337,6 +361,14 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
+@@ -337,6 +364,14 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
  kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
                                                  ctypes.POINTER(wintypes.DWORD)]
  kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
@@ -526,7 +561,7 @@ index 7766e97..cea5c84 100644
  try:
      user32.GetDpiForWindow.argtypes = [wintypes.HWND]
      user32.GetDpiForWindow.restype = wintypes.UINT
-@@ -427,20 +459,38 @@ class Desktop:
+@@ -427,20 +462,38 @@ class Desktop:
          user32.EnumWindows(WNDENUMPROC(cb), 0)
          return found
  
@@ -583,7 +618,7 @@ index 61a733d..d3ff12d 100644
  Pillow>=11.0,<13
 +comtypes>=1.4; sys_platform == "win32"
 diff --git a/tests/test_browse.py b/tests/test_browse.py
-index 92679a2..b34fa9a 100644
+index 92679a2..7f72bed 100644
 --- a/tests/test_browse.py
 +++ b/tests/test_browse.py
 @@ -1,7 +1,7 @@
@@ -595,7 +630,7 @@ index 92679a2..b34fa9a 100644
  from awaketoggle.browse_runner import Runner
  from awaketoggle.config import Config
  from tests.test_core import make
-@@ -355,3 +355,97 @@ def test_config_browse_keys(tmp_path):
+@@ -355,3 +355,114 @@ def test_config_browse_keys(tmp_path):
      cfg, warnings = load(p)
      assert len(warnings) == 3 and cfg == Config()
      assert set(ACTION_IDS) >= {"suche", "neuer_tab", "tab_schliessen", "klicken", "lesen_scrollen"}
@@ -650,6 +685,9 @@ index 92679a2..b34fa9a 100644
 +        CurrentBoundingRectangle = rect
 +        CurrentName, CurrentHelpText, CurrentClassName = "Rewards 698", "", "ToolbarActionView"
 +
++        def FindAll(self, scope, cond):
++            return types.SimpleNamespace(Length=0)
++
 +    class Found:
 +        Length = 1
 +
@@ -665,6 +703,9 @@ index 92679a2..b34fa9a 100644
 +
 +        def CreateOrCondition(self, *a):
 +            return a
++
++        def CreateTrueCondition(self):
++            return True
 +
 +    def get_module(name):
 +        calls.append(name)
@@ -693,6 +734,17 @@ index 92679a2..b34fa9a 100644
 +    assert calls == ["UIAutomationCore.dll"]
 +    for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
 +        sys.modules.pop(k, None)
++
++
++def test_badge_candidates_prefer_power_points_button():
++    from awaketoggle.badge_win import _candidates
++    buttons = [("Erweiterungen", "", "ExtensionsToolbarButton", (0, 0, 1, 1), None),
++               ("Power Coins", "", "PowerGuardButtonView", (0, 0, 1, 1), None),
++               ("Neu laden", "", "ReloadButton", (0, 0, 1, 1), None),
++               ("Power Coins", "", "PowerPointsActionView", (0, 0, 1, 1), None)]
++    got = [b[2] for b in _candidates(buttons)]
++    assert got[0] == "PowerPointsActionView"
++    assert "ExtensionsToolbarButton" not in got and "ReloadButton" not in got
 diff --git a/tests/test_config.py b/tests/test_config.py
 index 798b525..e1d456f 100644
 --- a/tests/test_config.py

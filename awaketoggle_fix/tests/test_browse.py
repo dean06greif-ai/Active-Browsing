@@ -406,6 +406,9 @@ def test_badge_win_generates_comtypes_module_before_import(monkeypatch):
         CurrentBoundingRectangle = rect
         CurrentName, CurrentHelpText, CurrentClassName = "Rewards 698", "", "ToolbarActionView"
 
+        def FindAll(self, scope, cond):
+            return types.SimpleNamespace(Length=0)
+
     class Found:
         Length = 1
 
@@ -421,6 +424,9 @@ def test_badge_win_generates_comtypes_module_before_import(monkeypatch):
 
         def CreateOrCondition(self, *a):
             return a
+
+        def CreateTrueCondition(self):
+            return True
 
     def get_module(name):
         calls.append(name)
@@ -449,3 +455,14 @@ def test_badge_win_generates_comtypes_module_before_import(monkeypatch):
     assert calls == ["UIAutomationCore.dll"]
     for k in ("comtypes.gen", "comtypes.gen.UIAutomationClient"):
         sys.modules.pop(k, None)
+
+
+def test_badge_candidates_prefer_power_points_button():
+    from awaketoggle.badge_win import _candidates
+    buttons = [("Erweiterungen", "", "ExtensionsToolbarButton", (0, 0, 1, 1), None),
+               ("Power Coins", "", "PowerGuardButtonView", (0, 0, 1, 1), None),
+               ("Neu laden", "", "ReloadButton", (0, 0, 1, 1), None),
+               ("Power Coins", "", "PowerPointsActionView", (0, 0, 1, 1), None)]
+    got = [b[2] for b in _candidates(buttons)]
+    assert got[0] == "PowerPointsActionView"
+    assert "ExtensionsToolbarButton" not in got and "ReloadButton" not in got

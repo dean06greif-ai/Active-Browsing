@@ -278,8 +278,11 @@ def selftest() -> int:
         if h:
             try:
                 from .badge_win import read_badge, toolbar_buttons
-                for name, help_text, cls, rect in toolbar_buttons(h):
+                for name, help_text, cls, rect, _ in toolbar_buttons(h):
                     lines.append(f"[INFO]   Button: {name!r} Tooltip={help_text!r} Klasse={cls!r} {rect}")
+                from .badge_win import _candidates, _child_texts
+                for name, _, cls, _, el in _candidates(toolbar_buttons(h)):
+                    lines.append(f"[INFO] Zähler-Kandidat: {name!r} ({cls}) Unterelemente={_child_texts(el)!r}")
                 lines.append(f"[INFO] Zähler (automatisch): {read_badge(h)}")
             except Exception as e:
                 check("UI Automation", False, repr(e), essential=False)

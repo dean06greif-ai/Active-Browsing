@@ -61,7 +61,7 @@ def toolbar_buttons(hwnd: int) -> list:
         if r.right - r.left <= 0 or r.top - top > TOOLBAR_MAX_PX:
             continue
         out.append((e.CurrentName or "", e.CurrentHelpText or "", e.CurrentClassName or "",
-                    (r.left, r.top, r.right, r.bottom)))
+                    (r.left, r.top, r.right, r.bottom), e))
     return out
 
 
@@ -69,6 +69,8 @@ def _ocr(rect) -> str:
     from PIL import ImageGrab, ImageOps
     img = ImageGrab.grab(bbox=rect, all_screens=True).convert("L")
     img = ImageOps.autocontrast(img.resize((img.width * OCR_SCALE, img.height * OCR_SCALE)))
+    if sum(img.getdata()) / (img.width * img.height) < 128:
+        img = ImageOps.invert(img)
     path = os.path.join(tempfile.gettempdir(), "AwakeToggle-badge.png")
     img.save(path)
     out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", OCR_PS, path],
@@ -79,8 +81,32 @@ def _ocr(rect) -> str:
     return out.stdout.strip()
 
 
-def _is_extension(name, help_text, cls) -> bool:
-    return "toolbaraction" in cls.lower() or "extension" in cls.lower()
+COUNTER_HINTS = ("points", "coin", "badge", "counter", "actionview")
+
+
+def _rank(button) -> int:
+    """0 = sicher ein Zähler-Button, höher = unwahrscheinlicher, None = kein Kandidat."""
+    name, cls = button[0].lower(), button[2].lower()
+    for i, hint in enumerate(COUNTER_HINTS):
+        if hint in cls:
+            return i
+    if "coin" in name or "point" in name:
+        return len(COUNTER_HINTS)
+    return None
+
+
+def _candidates(buttons) -> list:
+    ranked = [(r, i, b) for i, b in enumerate(buttons) if (r := _rank(b)) is not None]
+    return [b for _, _, b in sorted(ranked)]
+
+
+def _child_texts(element) -> list:
+    uia = _automation()
+    kids = element.FindAll(TREE_SCOPE_DESCENDANTS, uia.CreateTrueCondition())
+    return [kids.GetElement(i).CurrentName or "" for i in range(kids.Length)]
+
+
+TREE_SCOPE_DESCENDANTS = 4
 
 
 def read_badge(hwnd: int, extension: str = ""):
@@ -93,21 +119,27 @@ def read_badge(hwnd: int, extension: str = ""):
     want = extension.lower()
     if want:
         buttons = [b for b in buttons if want in b[0].lower() or want in b[1].lower()]
+        buttons = _candidates(buttons) + [b for b in buttons if _rank(b) is None]
     else:
-        ext = [b for b in buttons if _is_extension(*b[:3])]
-        buttons = ext or buttons
-    for name, help_text, _, _ in buttons:
-        for text in (name, help_text):
+        buttons = _candidates(buttons)
+    for name, help_text, _, _, element in buttons:
+        texts = [name, help_text]
+        try:
+            texts += _child_texts(element)
+        except Exception:
+            log.debug("Unterelemente nicht lesbar", exc_info=True)
+        for text in texts:
             n = parse_number(text)
             if n is not None:
                 return n
-    targets = buttons if want else [b for b in buttons if _is_extension(*b[:3])]
-    for b in targets:
+    for b in buttons:
         try:
-            n = parse_number(_ocr(b[3]))
+            text = _ocr(b[3])
         except Exception:
-            log.exception("OCR auf Erweiterungs-Button fehlgeschlagen")
+            log.exception("OCR auf Zähler-Button fehlgeschlagen")
             return None
+        log.debug("OCR %r: %r", b[0], text)
+        n = parse_number(text)
         if n is not None:
             return n
     return None
