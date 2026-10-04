@@ -61,6 +61,9 @@ class FakeDesk:
     def is_visible(self, h):
         return h in self.wins
 
+    def is_app_window(self, h):
+        return h in self.wins
+
     def title(self, h):
         if h not in self.wins:
             return ""

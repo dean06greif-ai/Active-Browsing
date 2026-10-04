@@ -476,13 +476,13 @@ class Desktop:
         found = []
 
         def cb(h, _):
-            if self._is_app_window(h):
+            if self.is_app_window(h):
                 found.append(h)
             return True
         user32.EnumWindows(WNDENUMPROC(cb), 0)
         return found
 
-    def _is_app_window(self, h: int) -> bool:
+    def is_app_window(self, h: int) -> bool:
         if not user32.IsWindowVisible(h) or user32.GetWindow(h, GW_OWNER) or user32.GetWindowTextLengthW(h) <= 0:
             return False
         if user32.GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:

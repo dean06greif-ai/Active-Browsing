@@ -25,6 +25,7 @@ SLOW_LOAD_S = 5.0
 TOOLBAR_PX = 150
 POPUP_AFTER_CLICK_S = 8.0
 PRIVATE_CHECK_S = 0.6
+NEW_WINDOW_SETTLE_S = 0.4
 
 
 @dataclass
@@ -121,6 +122,9 @@ class Runner:
         h = d.find_browser(processes, skip=self._is_private)
         if h and d.process_name(h) not in processes:
             log.info("Kein bekannter Browser, nehme oberstes Fenster: %s", d.process_name(h))
+        if not h and fg and proc in processes:
+            return Result("skipped", "nur Inkognito-/InPrivate-Fenster offen – die werden nie benutzt, "
+                                     "bitte ein normales Browserfenster offen lassen")
         if not h:
             return Result("skipped", f"kein Browserfenster gefunden (vorne: {proc or '-'}) – Programmname in "
                                      "browse_processes eintragen; Inkognito-/InPrivate-Fenster werden nie benutzt")
@@ -314,16 +318,26 @@ class Runner:
 
     def _do_new_window(self, c):
         d = self.desk
+        proc = d.process_name(self._target())
+        before = d.top_windows()
         self._send(c)
         t0 = self._clock()
         while self._clock() - t0 < NEW_WINDOW_TIMEOUT_S:
             self._wait(0.15, focus=False)
             fg = d.root(d.foreground())
-            if self._is_new_browser(fg) and d.process_name(fg) == d.process_name(self._target()):
-                self._stack.append(fg)
-                self._opened = True
-                self._reject_private(fg)
-                return
+            if fg in before or not self._is_new_browser(fg) or d.process_name(fg) != proc:
+                continue
+            self._wait(NEW_WINDOW_SETTLE_S, focus=False)
+            fresh = [h for h in d.top_windows() - before
+                     if h not in self._stack and d.is_app_window(h) and d.process_name(h) == proc]
+            if fresh != [fg] or d.root(d.foreground()) != fg:
+                self._known |= set(fresh)
+                self._problem(f"{len(fresh)} neue Browserfenster gleichzeitig – unklar, welches das eigene ist")
+                raise Abort("eigenes Testfenster nicht eindeutig, nichts angefasst")
+            self._stack.append(fg)
+            self._opened = True
+            self._reject_private(fg)
+            return
         self._problem(f"Kein neues Fenster nach {NEW_WINDOW_TIMEOUT_S:.0f} s ({c})")
         raise Abort("neues Fenster nicht erkannt")
 

@@ -1,0 +1,50 @@
+{
+  "summary": "Ran the full pytest suite (62 tests, all pass) and added 5 adversarial FakeDesk tests focused on the 'never touch foreign/user windows, never Inkognito' invariants. Reviewed browse.py, browse_runner.py and config.py against the stated policies. 4 of the 5 adversarial tests pass; 1 reproduces a real safety bug in browse_runner._do_new_window where a foreign same-process browser window that happens to come to the foreground during the 6s polling window after our ctrl+n is captured as the runner's 'own' window and subsequently receives every keystroke/click (and is finally closed by cleanup). This directly violates the policy that only windows the runner itself opened may receive input.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "awaketoggle.browse_runner.Runner._do_new_window",
+        "issue": "After sending ctrl+n, the runner accepts ANY new same-process browser window that appears on top within NEW_WINDOW_TIMEOUT_S (6s) as its own. A foreign browser window opened externally during that interval (e.g. mail-link, notification click, OS deep-link) is captured into self._stack with self._opened=True and then receives all subsequent keystrokes, clicks and type_char. At cleanup it is force-closed with ctrl+w. This breaks the hard invariant 'only act on windows we opened ourselves'. Repro: tests/test_browse_adversarial.py::test_foreign_same_proc_window_appearing_after_ctrl_n_is_not_captured_as_own fails on seed 0 with ~80 keystrokes sent to the foreign window.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "awaketoggle.browse_runner.Runner._cleanup_leftover",
+        "issue": "Leftover windows are kept untouched only if the process name changed OR the title changed. If the user keeps using a leftover window but the title happens to be identical (e.g. still on 'Neuer Tab'), cleanup will close it. Low likelihood but worth considering a stricter 'only close if we also see no new user_input in that window' check or a short cooldown."
+      },
+      {
+        "endpoint": "awaketoggle.browse_runner.Runner._bring_browser_to_front",
+        "issue": "find_browser(..., skip=self._is_private) correctly skips private windows, but on a system where the only browser windows are private the code returns a 'skipped' result mentioning 'kein Browserfenster gefunden' rather than something like 'nur Inkognito-/InPrivate-Fenster offen'. test_runner_skips_when_only_private_windows_exist passes because it only checks for the substring 'Inkognito' which happens to appear in the trailing explanation; message could be clearer."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/tests/test_browse.py",
+    "/app/tests/test_browse_adversarial.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Harden Runner._do_new_window against capturing foreign windows. Suggested fix: snapshot d.top_windows() just before sending ctrl+n; after sending, only accept a new foreground window if (a) it is in top_windows_after - top_windows_before, (b) that diff contains exactly ONE new window of our process, and (c) its creation time (or first-seen tick) is after the ctrl+n send tick. If more than one new matching window appears, abort instead of guessing. Alternatively, keep polling until the diff stabilises for ~300 ms and only then accept.",
+    "Consider logging / aborting if top_windows() grows by more than one entry during the new-window wait.",
+    "Clarify the 'skipped' message when only Inkognito/InPrivate windows are present (today it reuses the generic 'kein Browserfenster gefunden' text)."
+  ],
+  "critical_code_review_comments": [
+    "browse_runner.py _do_new_window relies solely on 'first new same-proc window at the foreground' - this is the single weakest link vs. the stated 'never touch foreign windows' policy; see action_items.",
+    "BLOCKED set in browse.py correctly covers ctrl+shift+n, ctrl+shift+t, ctrl+shift+a; combo() enforces this at build-time and tests confirm no runtime send ever contains them.",
+    "config.py: REMOVED_IDS are silently dropped from browse_exclude before validation - correct and covered by test_config_drops_removed_action_ids_and_reads_private_words. browse_private_words validation is consistent with browse_processes.",
+    "is_private() title detection uses lowercase substring match on both built-in PRIVATE_WORDS and user-provided words; good. One minor thought: 'private' alone could false-positive on e.g. a page titled 'Private Equity News' once a user adds generic words - current defaults are specific enough so this is fine.",
+    "Runner._send guards 'kein eigenes Testfenster mehr offen' only when self._opened is True; the very first ctrl+n to the base window is the only case where base receives input, matching policy.",
+    "Runner._own_popup requires a recent click to accept a new same-proc window as our popup; good. However _do_new_window has no equivalent 'only accept windows that appeared AFTER the ctrl+n send' guard - that's the bug above."
+  ],
+  "updated_files": [
+    "/app/tests/test_browse_adversarial.py (new)"
+  ],
+  "success_rate": {"backend": "98.5% (66/67 incl. adversarial; 62/62 original pass)", "frontend": "n/a"},
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Original 62 tests all green. New file tests/test_browse_adversarial.py adds 5 adversarial checks. One - test_foreign_same_proc_window_appearing_after_ctrl_n_is_not_captured_as_own - deliberately exposes a real runner bug in _do_new_window (foreign same-proc window captured as own during ctrl+n polling). After the main agent hardens _do_new_window (snapshot top_windows diff + 'appeared after send' check), re-run `python -m pytest -q tests` and this file; the adversarial test should turn green without touching the FakeDesk logic.",
+  "rca of the issue": "Runner._do_new_window loop polls foreground() after sending ctrl+n and accepts the first window that satisfies self._is_new_browser (h not in self._known, h not in self._stack, process in self._processes) AND has the same process name as self._target(). It does not verify that the window actually originated from the ctrl+n keystroke - any foreign browser window that becomes foreground during the up-to-6s poll (e.g. user clicked a mail link, Windows deep-link, pre-existing hidden window becoming visible) will match these criteria since it is new to self._known and shares the base browser's process. Once captured, self._stack contains the foreign window, self._opened flips to True, and all subsequent _send/type_char/click go to that foreign window; cleanup then force-closes it with ctrl+w. Mitigation: compare d.top_windows() before and after the send and only accept a window present in the (after - before) delta AND unique in that delta; abort otherwise."
+}
