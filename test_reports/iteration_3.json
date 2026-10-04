@@ -1,0 +1,39 @@
+{
+  "summary": "Static review of build.cmd/build.ps1 wrapper fix for AwakeToggle Windows tray tool + pytest regression on Linux. All checks pass; 54 tests still green.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "static_review": {
+    "build.cmd": {
+      "line_endings": "CRLF (verified via `file` command: 'DOS batch file, ASCII text, with CRLF line terminators')",
+      "syntax": "Valid batch: `@echo off` + powershell invocation + `if errorlevel 1 pause`",
+      "powershell_invocation": "powershell -NoProfile -ExecutionPolicy Bypass -File \"%~dp0build.ps1\" — %~dp0 ensures script resolves relative to the .cmd location so it works from any cwd; -ExecutionPolicy Bypass bypasses the Zone.Identifier/unsigned-script block that caused the user's PSSecurityException",
+      "error_propagation": "`if errorlevel 1 pause` keeps window open on failure so user sees error; note: exit code is not re-raised to caller, which is fine for a double-click/manual build but would not fail a parent script. Acceptable for the stated use case."
+    },
+    "build.ps1": {
+      "repo_root": "Set-Location (Split-Path $PSScriptRoot -Parent) — correctly moves to repo root regardless of invocation cwd",
+      "error_handling": "$ErrorActionPreference = 'Stop' + explicit $LASTEXITCODE checks after python/PyInstaller",
+      "pyinstaller_args": "--collect-submodules comtypes present (line 11); --onefile --noconsole --hidden-import pystray._win32 --icon --exclude-module tkinter/unittest/pydoc/doctest",
+      "line_continuations": "Backtick (`) continuations intact on lines 7-16"
+    },
+    "README.md": {
+      "selbst_bauen_section": "Line 205 references `.\\tools\\build.cmd` with comment 'umgeht die Skript-Sperre von PowerShell' — matches the fix"
+    }
+  },
+  "pytest_results": {
+    "command": "cd /app/awaketoggle_fix && python3 -m pytest -q tests",
+    "result": "54 passed in 0.56s",
+    "regression": "No regression — matches iterations 1-2 baseline"
+  },
+  "critical_code_review_comments": [
+    "Minor: build.cmd does not propagate exit code to caller (only pauses). If a CI wrapper ever invokes build.cmd it will not see failure. Add `exit /b %errorlevel%` after the pause for defensive propagation.",
+    "Nit: README code fence is powershell-tagged but line 205 is a .cmd invocation; still works since users just copy the command, but a short note that build.cmd can be double-clicked from Explorer would help the target audience."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "n/a (Windows desktop tool, no web frontend)"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Windows-only tray tool; Linux CI can only do static review + pytest (54 tests). Fix in this iteration adds tools/build.cmd wrapper to bypass PowerShell execution policy. Verified CRLF line endings, correct %~dp0 path handling, repo-root cd in ps1, --collect-submodules comtypes still present, README updated."
+}
