@@ -27,7 +27,7 @@ DECLINE_BAD = ("einstellung", "setting", "anpass", "verwalt", "manage", "custom"
                "präferenz", "preference", "benachrichtig", "notification", "standort", "location", "abo", "subscribe",
                "partner", "anbieter", "vendor", "bezahl", "zahlen", "pay", "pur ", "datenschutzerklärung")
 MAX_LEN = 50
-SAME_BANNER_PX = 500  # Ablehnen-Button muss nah am Zustimmen-Button liegen (gleicher Hinweis)
+SAME_BANNER_PX = 250  # Ablehnen-Button muss nah am Zustimmen-Button liegen (gleicher Hinweis)
 
 
 def _norm(name: str) -> str:

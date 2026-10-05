@@ -82,7 +82,7 @@ def find_update(repo: str, current: str = __version__, get=_get):
         versions = list(ex.map(lambda b: branch_version(repo, b, get), branches))
     log.info("Update-Suche: %d Branches, Versionen %s", len(branches),
              ", ".join(f"{b}={v or '-'}" for b, v in zip(branches, versions)))
-    best, best_v = None, parse_version(current)
+    best, best_v = None, parse_version(current) or (0,)
     for branch, version in zip(branches, versions):
         v = parse_version(version)
         if v and v > best_v:
