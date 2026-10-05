@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>AwakeToggle – Eingabetest</title>
+<style>
+  body { font: 16px/1.5 Consolas, monospace; background: #111; color: #ddd; margin: 2rem; }
+  h1 { font-size: 1.2rem; color: #fff; }
+  table { border-collapse: collapse; margin-top: 1rem; }
+  td { padding: .3rem 1.2rem .3rem 0; }
+  .ok { color: #3c5; } .warn { color: #e9a014; }
+  #log { margin-top: 1rem; max-height: 50vh; overflow: auto; color: #999; }
+  input { width: 5rem; background: #222; color: #fff; border: 1px solid #444; }
+</style>
+</head>
+<body>
+<h1>AwakeToggle – Eingabetest für Phase 4</h1>
+<p>Diese Seite im Browser öffnen und den Mauszeiger über dem Fenster lassen. Sie zeigt, welche Eingaben
+  der Browser tatsächlich als DOM-Ereignis erhält (Maus, Scrollen oder F13–F24) und wie lange zuletzt nichts kam.</p>
+<label>Leerlaufgrenze (s): <input id="limit" type="number" value="90" min="5"></label>
+<table>
+  <tr><td>Letzte Mausbewegung</td><td id="mouse">–</td></tr>
+  <tr><td>Letzter Tastendruck</td><td id="key">–</td></tr>
+  <tr><td>Letztes Scrollen</td><td id="wheel">–</td></tr>
+  <tr><td>Leerlauf seit</td><td id="idle">–</td></tr>
+  <tr><td>Status</td><td id="state">–</td></tr>
+</table>
+<div id="log"></div>
+<script>
+  let last = Date.now();
+  const $ = (id) => document.getElementById(id);
+  const time = () => new Date().toLocaleTimeString("de-DE");
+  function note(kind, detail) {
+    last = Date.now();
+    $(kind).textContent = `${time()} ${detail}`;
+    $("log").insertAdjacentHTML("afterbegin", `<div>${time()} ${{mouse: "Maus", key: "Taste", wheel: "Scrollen"}[kind]}: ${detail}</div>`);
+  }
+  document.addEventListener("mousemove", (e) => note("mouse", `(${e.screenX}, ${e.screenY}) Δ ${e.movementX}/${e.movementY}`));
+  document.addEventListener("wheel", (e) => note("wheel", `deltaY=${e.deltaY.toFixed(1)}`), { passive: true });
+  document.addEventListener("keydown", (e) => note("key", `key="${e.key}" code="${e.code}"`));
+  setInterval(() => {
+    const idle = Math.round((Date.now() - last) / 1000);
+    const limit = Number($("limit").value) || 90;
+    $("idle").textContent = `${idle} s`;
+    $("state").innerHTML = idle >= limit
+      ? `<span class="warn">Leerlauf erkannt (≥ ${limit} s)</span>`
+      : `<span class="ok">aktiv</span>`;
+  }, 1000);
+</script>
+</body>
+</html>
