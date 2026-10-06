@@ -45,7 +45,7 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - config badge_mode off/session/random (+ badge_random_percent, Standard 25); altes badge_read=false → off; Tray-Untermenü „Power-Coins-Zähler ablesen (nach der Sitzung)“: Aus / Nach jeder Sitzung / Zufällig 10/25/50 % / eigener Wert + „Genaue Zahl im Popup lesen“
 - Runner liest NUR einmal am Sitzungsende (vorher-Lesen entfernt), 0,8–3 s Pause, nicht wenn Nutzer aktiv/aus; Vergleich mit letzter Messung (badge_prev); nicht lesbar = Auffälligkeit; Result: seconds, badge, badge_read
 - CoinHistory.want/session_done: zählt Sitzungen seit letzter Messung; CSV-Spalten Zeit;Wert;Änderung;Minuten seit letzter Messung;Sitzungen seit letzter Messung;Aktionen;Sitzungsdauer (s);Modus;Status;Wochentag; Migration alter 3-Spalten-CSV; HTML mit allen Spalten, Ø pro Stunde, Nicht lesbar
-- 178 pytest-Tests grün
+- 196 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
 
 ## Backlog
 - P0 --selftest auf echtem Windows: „Zähler im Popup (Power Coins, genau): 487“ prüfen
