@@ -323,3 +323,16 @@ def test_unstable_tab_ids_fall_back_to_plan_counting():
         _, res = _run(desk, seed, cfg=Config(signal="browse", browse_actions_max=30))
         assert res.status == "done", (seed, res)
         assert set(desk.wins) == {USER}
+
+
+def test_default_break_spacing_is_mostly_1_to_2_hours_but_sometimes_up_to_4():
+    cfg = Config(signal="browse")
+    dues = []
+    for seed in range(2000):
+        api, clock, eng = make(cfg, rng=random.Random(seed))
+        eng._break_due(cfg)
+        dues.append(eng._op_due / 3600)
+    assert min(dues) >= 1 and max(dues) <= 4
+    early = sum(d <= 2 for d in dues) / len(dues)
+    late = sum(d >= 3 for d in dues) / len(dues)
+    assert 0.45 < early < 0.65 and 0.05 < late < 0.2, (early, late)

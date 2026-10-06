@@ -30,7 +30,7 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - 110 pytest-Tests grün (Windows-Teile simuliert); ZIP: /app/AwakeToggle_komplett.zip
 
 ## Umgesetzt v1.7.0 (2026-06)
-- Lange Pausen: nach zufällig 60–120 min Dauerbetrieb (ohne Nutzeraktivität) macht eine Sitzung mittendrin 2–15 min Pause: Maus Richtung Minimieren, eigene Testfenster minimiert, danach wiederhergestellt; sonst nur warten; Nutzereingabe beendet sofort. Config browse_breaks, browse_break_minutes, browse_break_every_minutes; Tray-Schalter
+- Lange Pausen: nach zufällig 60–240 min Dauerbetrieb (Dreiecksverteilung, meist 1–2 Std, manchmal bis 4 Std) (ohne Nutzeraktivität) macht eine Sitzung mittendrin 2–15 min Pause: Maus Richtung Minimieren, eigene Testfenster minimiert, danach wiederhergestellt; sonst nur warten; Nutzereingabe beendet sofort. Config browse_breaks, browse_break_minutes, browse_break_every_minutes; Tray-Schalter
 - Sitzungen ohne Abstand: browse_chain_percent (Standard 20 %), nächste Sitzung nach 1,5–6 s, nur wenn Nutzer nicht aktiv; Tray-Untermenü 0/10/20/40 %
 - Tab-Limit nur für eigene Tabs: Tableiste per UIA (tabs_win.py, RuntimeId + ausgewählt), eigene Tabs nur nach eigenen Öffnen-Aktionen; fremde Tabs zählen nicht, werden nie geschlossen/bedient, Fenster mit fremden Tabs bleibt offen; Fallback auf Plan-Zählung, wenn Tableiste unlesbar oder IDs instabil; --selftest zeigt „Tabs lesbar / IDs stabil“
 - 148 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip

@@ -51,7 +51,7 @@ klicken. Die Meldung erscheint pro Datei nur einmal. Wer der Datei nicht traut, 
 - **Rechtsklick** öffnet das Menü:
   - *Aktiv* – ein/aus, darunter der aktuelle Status
   - *Signal* – Maus (1 Pixel hin und zurück), Taste F15, *Zufällig* oder *Browser-Test*; darunter die Zufallsvarianten zum An-/Abhaken
-  - *Lange Pausen (2–15 min, etwa alle 1–2 Std Betrieb, Fenster minimiert)* – an/aus (siehe Browser-Test)
+  - *Lange Pausen (2–15 min, etwa alle 1–4 Std Betrieb, Fenster minimiert)* – an/aus (siehe Browser-Test)
   - *Sitzungen direkt hintereinander (ohne Abstand)* – nie / ca. 10 / 20 / 40 % der Fälle
   - *Browser-Test Länge* – kurz / mittel / lang (bis 10 / 20 / 40 Aktionen je Durchlauf)
   - *Abstand variieren* – nein, oder zufällig bis zu 10 / 25 / 50 % kürzer
@@ -87,7 +87,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
   "browse_accept_cookies": true,
   "browse_breaks": true,
   "browse_break_minutes": [2, 15],
-  "browse_break_every_minutes": [60, 120],
+  "browse_break_every_minutes": [60, 240],
   "browse_chain_percent": 20,
   "away_power": true,
   "away_brightness": 0,
@@ -113,7 +113,7 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `browse_accept_cookies` | `true` / `false` | Cookie-/Datenschutz-Hinweise automatisch wegklicken (meist „Alle akzeptieren“, ab und zu „Nur notwendige“) |
 | `browse_breaks` | `true` / `false` | lange Pausen bei langem Betrieb (Tray: „Lange Pausen …“) |
 | `browse_break_minutes` | `[von, bis]`, 1–120 | Länge einer langen Pause in Minuten (zufällig dazwischen) |
-| `browse_break_every_minutes` | `[von, bis]`, 10–600 | nach so vielen Minuten Dauerbetrieb (zufällig dazwischen) kommt die nächste lange Pause |
+| `browse_break_every_minutes` | `[von, bis]`, 10–600 | nach so vielen Minuten Dauerbetrieb kommt die nächste lange Pause (zufällig dazwischen, frühe Werte häufiger: meist nach 1–2 Std, manchmal erst nach 3–4 Std) |
 | `browse_chain_percent` | 0–100 | in so viel Prozent der Fälle startet die nächste Sitzung direkt im Anschluss, ohne Abstand |
 | `badge_extension` | Text | Teil des Erweiterungsnamens (Tooltip), z. B. `"Rewards"`; leer = erste Erweiterung mit Zahl |
 | `browse_private_words` | Liste von Titelwörtern | **zusätzliche** Wörter, an denen ein Inkognito-Fenster im Fenstertitel erkannt wird (immer erkannt: InPrivate, Incognito, Inkognito, Privater Modus, Private Browsing …). Nötig nur, wenn Ihr Browser ein eigenes Wort nutzt – `--selftest` zeigt alle Browserfenster mit Titel und „normal“/„Inkognito“ |
@@ -200,7 +200,7 @@ Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv)
    „Benachrichtigungen erlauben“ usw. werden nie gedrückt. Protokoll: „Cookie-/Datenschutz-Hinweis akzeptiert:
    'Alle akzeptieren'“ bzw. „… abgelehnt: 'Nur notwendige'“.
    **Lange Pausen** (`browse_breaks`, Tray: „Lange Pausen …“): Läuft der Test lange am Stück (Standard: zufällig
-   nach 1–2 Stunden Dauerbetrieb, ohne dass Sie zwischendurch aktiv waren), macht eine Sitzung mittendrin eine lange
+   nach 1–4 Stunden Dauerbetrieb – meist nach 1–2 Std, ab und zu erst nach 3–4 Std –, ohne dass Sie zwischendurch aktiv waren), macht eine Sitzung mittendrin eine lange
    Pause von zufällig 2–15 Minuten – wie ein Mensch, der zum Essen oder Telefonieren aufsteht: Maus wandert Richtung
    Minimieren-Knopf, **die eigenen Testfenster werden minimiert** (Ihre Fenster nie), nach der Pause wieder geöffnet,
    kurz orientieren, weiterlesen und weitermachen. Lässt sich nichts minimieren, wird einfach gewartet. Sobald Sie Maus

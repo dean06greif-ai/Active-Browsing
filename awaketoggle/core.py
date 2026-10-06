@@ -293,7 +293,8 @@ class Engine:
         now = self._clock()
         if self._op_since is None:
             self._op_since = now
-            self._op_due = self._rng.uniform(*cfg.browse_break_every_minutes) * 60
+            lo, hi = cfg.browse_break_every_minutes
+            self._op_due = self._rng.triangular(lo, hi, lo) * 60  # meist früher, ab und zu erst ganz spät
         if now - self._op_since < self._op_due:
             return None
         return self._rng.uniform(*cfg.browse_break_minutes) * 60

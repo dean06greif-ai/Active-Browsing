@@ -42,7 +42,7 @@ class Config:
     browse_accept_cookies: bool = True
     browse_breaks: bool = True
     browse_break_minutes: tuple = (2, 15)
-    browse_break_every_minutes: tuple = (60, 120)
+    browse_break_every_minutes: tuple = (60, 240)
     browse_chain_percent: int = 20
     badge_read: bool = True
     badge_extension: str = ""
