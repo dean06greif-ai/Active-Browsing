@@ -1,0 +1,37 @@
+{
+  "summary": "Backend-only (pure Python desktop tool) review and testing of AwakeToggle v17 features: random long breaks mid-session (minimize/restore own windows), chained sessions without gap (configurable %), tab-limit scoped to own tabs via UIA. Ran full existing suite (137 tests, all pass), reviewed logic in browse.py, core.py, browse_runner.py, config.py, and added 11 adversarial pytest tests covering edge cases (abort during break with minimized leftovers, force vs chain interplay, config boundary values, foreign-tab-only windows staying open, break reset after taken, extremes of pause range). Final result: 148/148 passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_v17_adversarial.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "browse_runner.py _do_break safely bails via _check('break') -> Abort if stack is empty (self._opened True but _stack empty), so top = own[-1] cannot IndexError in practice. Verified.",
+    "core.py _tick consumes both force and chain in one tick; force bypasses USER_ACTIVE but chain only triggers on WAIT (i.e. last input was own), so user activity cannot cause auto-chain. Correct per spec.",
+    "browse_runner.py _tabs: fresh-tab attribution uses len(fresh) <= len(self._tab_events) to decide own vs foreign; this is pessimistic (treats surplus as foreign) and matches spec. OWN_TAB_GRACE_S expiry prunes stale events.",
+    "browse.py make_scenario pause_at range: randint(max(1, n//4), max(1, n*3//4)); for very small n this could degenerate but tests confirm 1 < idx < len(plan.steps)-1 across 200 seeds.",
+    "config.py validate for break_minutes/every_minutes requires lo<=v[0]<=v[1]<=hi — correctly rejects reversed/out-of-range tuples.",
+    "After abort during long break, minimized own windows remain minimized; _cleanup_leftover on next run calls _close_top which activates (restores) then closes. Verified by new adversarial test."
+  ],
+  "updated_files": [
+    "/app/tests/test_v17_adversarial.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (148/148 pytest)",
+    "frontend": "N/A (desktop Python tool, no web frontend)"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Pure Python desktop tool under /app/awaketoggle. Ignore /app/backend and /app/frontend template folders. Windows-only modules (win32.py, tabs_win.py, power_win.py, session.py, consent_win.py, badge_win.py) cannot be imported on Linux; UIA/desktop is simulated by FakeDesk/TabDesk fixtures in tests/test_browse.py and tests/test_v17.py. Run: `cd /app && python -m pytest -q tests`. v17 features (long breaks, chaining, own-tab tracking) are implemented correctly and well-covered.",
+  "rca of the issue": "No bugs found."
+}
