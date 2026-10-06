@@ -38,6 +38,7 @@ OWN_TAB_GRACE_S = 3.0  # erscheint so lange nach eigenem Klick/Strg+T kein neuer
 TAB_OPEN_KEYS = frozenset({"ctrl+t", "ctrl+shift+k"})
 TAB_MAY_OPEN_KEYS = TAB_OPEN_KEYS | {"ctrl+u"}
 TAB_SWITCH_KEYS = frozenset(TAB_KEYS) | {f"ctrl+{i}" for i in range(1, 10)}
+BADGE_PAUSE_S = (0.8, 3.0)  # kurz innehalten, bevor nach der Sitzung der Zähler angeschaut wird
 TAB_CHECK_KINDS = frozenset({"key", "type", "nav", "click", "consent", "break"})  # vorher: eigener Tab vorne?
 
 
@@ -47,6 +48,9 @@ class Result:
     text: str
     actions: int = 0
     problems: list = field(default_factory=list)
+    seconds: float = 0.0
+    badge: object = None  # gelesener Zählerwert (None = nicht gelesen)
+    badge_read: bool = False  # True = am Ende der Sitzung wurde abgelesen (auch wenn nicht lesbar)
 
 
 class Abort(Exception):
@@ -67,7 +71,9 @@ class Runner:
 
     # ---------- Ablauf ----------
 
-    def run(self, plan, processes, cancel=lambda: False, verbose=False, badge=None, private_words=()) -> Result:
+    def run(self, plan, processes, cancel=lambda: False, verbose=False, badge=None, private_words=(),
+            badge_prev=None) -> Result:
+        """badge: Zähler am Ende der Sitzung lesen (nur einmal, nicht nach jeder Aktion); badge_prev: letzter Wert."""
         d = self.desk
         self._private_words = tuple(private_words)
         processes = BrowserNames(processes)
@@ -79,7 +85,6 @@ class Runner:
         self._problems, self._stack, self._opened = [], [], False
         self._last_click = None
         self._consent_stuck = set()
-        before = self._read_badge(badge, fg)
         self._mark()
         self._cleanup_leftover()
         self._known = d.top_windows()
@@ -103,9 +108,11 @@ class Runner:
             return Result("aborted", str(e), done, self._problems)
         d.move_to(*cursor)
         self._mark()
-        text = f"{max(done - 2, 0)} Aktionen in {self._clock() - start:.0f} s"
-        if badge:
-            badge_text, issue = compare(before, self._read_badge(badge, fg))
+        seconds = self._clock() - start
+        text = f"{max(done - 2, 0)} Aktionen in {seconds:.0f} s"
+        read, value = self._badge_after_session(badge, fg)
+        if read:
+            badge_text, issue = compare(badge_prev, value)
             if issue:
                 self._problem(issue)
             if badge_text:
@@ -113,7 +120,17 @@ class Runner:
                 text = f"{badge_text}, {text}"
         if self._problems:
             text += f", {len(self._problems)} Auffälligkeit(en)"
-        return Result("done", text, done, self._problems)
+        return Result("done", text, done, self._problems, seconds, value, read)
+
+    def _badge_after_session(self, badge, h):
+        """(abgelesen?, Wert) – einmal nach der Sitzung; nicht, wenn Sie inzwischen selbst aktiv sind."""
+        if not badge:
+            return False, None
+        self._sleep(self._rng.uniform(*BADGE_PAUSE_S))
+        if self._cancel() or self._user_active():
+            log.info("Zähler nicht abgelesen: Sitzung fertig, aber ausgeschaltet oder Sie sind aktiv")
+            return False, None
+        return True, self._read_badge(badge, h)
 
     def _is_private(self, h) -> bool:
         return bool(h) and is_private(self.desk.title(h), self._private_words)

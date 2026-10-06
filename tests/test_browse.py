@@ -423,16 +423,18 @@ def test_badge_parse_and_compare():
     assert parse_number("Meine Erweiterung") is None
     assert compare(698, 712) == ("Zähler 698 → 712", None)
     assert compare(698, 698)[1].startswith("Zähler nicht gestiegen")
-    assert compare(None, None) == ("", None)
+    assert compare(None, 487) == ("Zähler 487", None)
+    assert compare(None, None)[1] == compare(487, None)[1] == "Zähler konnte nicht gelesen werden"
 
 
-def test_runner_reads_badge_before_and_after():
+def test_runner_reads_badge_once_after_session_and_compares_with_last_value():
     desk = FakeDesk()
-    values = iter([698, 698])
+    calls = []
     r = Runner(desk, sleep=desk.sleep, clock=desk.clock, rng=random.Random(1))
     plan = make_scenario(Config(browse_actions_max=3), random.Random(1))
-    res = r.run(plan, (), badge=lambda h: next(values))
-    assert res.status == "done"
+    res = r.run(plan, (), badge=lambda h: calls.append(h) or 698, badge_prev=698)
+    assert res.status == "done" and len(calls) == 1
+    assert res.badge == 698 and res.badge_read
     assert "Zähler 698 → 698" in res.text
     assert any("nicht gestiegen" in p for p in res.problems)
 

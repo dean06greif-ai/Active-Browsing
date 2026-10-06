@@ -143,12 +143,13 @@ def test_history_records_csv_label_and_html(tmp_path):
     h.record(480)
     h.record(487)
     h.record(1000.0)
-    assert h.rows() == [("2026-06-10 12:00:00", 480, 0), ("2026-06-10 12:01:00", 487, 7),
-                        ("2026-06-10 12:02:00", 1000, 513)]
+    assert h.rows() == [("2026-06-10 12:01:00", 480, 0), ("2026-06-10 12:02:00", 487, 7),
+                        ("2026-06-10 12:03:00", 1000, 513)]
     assert h.label() == "Power Coins: 1000 (+520 seit Programmstart)"
     assert changes == [480, 487, 1000]
     text = (tmp_path / "power_coins.csv").read_text("utf-8-sig")
-    assert text.splitlines()[0] == "Zeit;Wert;Änderung"
+    assert text.splitlines()[0].startswith("Zeit;Wert;Änderung;Minuten seit letzter Messung;")
+    assert text.splitlines()[1].startswith("2026-06-10 12:00:00;;;") and "nicht lesbar" in text
     page = (tmp_path / "power_coins.html").read_text("utf-8")
     assert 'id="coins-current">1000<' in page and "<polyline" in page and "+513" in page
     again = CoinHistory(tmp_path / "power_coins.csv")

@@ -32,6 +32,14 @@ def chain_label(percent) -> str:
     return "Nie (immer mit Abstand)" if not percent else f"In ca. {percent} % der Fälle"
 
 
+def badge_mode_label(mode, percent=None) -> str:
+    if mode == "off":
+        return "Aus (nie ablesen)"
+    if mode == "session":
+        return "Nach jeder Sitzung"
+    return f"Zufällig ab und zu (ca. {percent} % der Sitzungen)"
+
+
 def tooltip(status: Status, coins: str = "") -> str:
     """Tooltip (Windows: max. 127 Zeichen); Statuszeile wird gekürzt, damit Auto-Aus und Zähler sichtbar bleiben."""
     extra = f"\nAuto-Aus um {status.deadline:%H:%M}" if status.deadline else ""

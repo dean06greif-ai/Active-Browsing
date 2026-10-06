@@ -1,57 +1,131 @@
-"""Verlauf des Power-Coins-Zählers: CSV speichern, aktuellen Wert merken, HTML-Ansicht (Tabelle + Diagramm)."""
+"""Verlauf des Power-Coins-Zählers: wann ablesen, CSV mit Uhrzeit + Sitzungsdaten, HTML-Ansicht (Tabelle + Diagramm)."""
 import csv
 import html
 import logging
 import os
+import random
 import threading
 from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-HEADER = ("Zeit", "Wert", "Änderung")
+HEADER = ("Zeit", "Wert", "Änderung", "Minuten seit letzter Messung", "Sitzungen seit letzter Messung",
+          "Aktionen", "Sitzungsdauer (s)", "Modus", "Status", "Wochentag")
+WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+TIME_FMT = "%Y-%m-%d %H:%M:%S"
 CHART_POINTS = 500
 TABLE_ROWS = 300
 REFRESH_S = 30
 
 
+def mode_label(mode: str, percent: int) -> str:
+    return {"off": "aus", "session": "jede Sitzung"}.get(mode, f"zufällig ca. {percent} %")
+
+
 class CoinHistory:
-    def __init__(self, csv_path, html_path=None, now=datetime.now):
+    def __init__(self, csv_path, html_path=None, now=datetime.now, rng=None):
         self.csv_path = Path(csv_path)
         self.html_path = Path(html_path) if html_path else self.csv_path.with_suffix(".html")
         self.on_change = None
         self._now = now
+        self._rng = rng or random.Random()
         self._lock = threading.Lock()
         self.start = None
         self.last = None
         self.last_time = ""
+        self.sessions = 0  # fertige Sitzungen seit dem letzten Ablesen
+        self._migrate()
         rows = self.rows()
         if rows:
             self.last_time, self.last = rows[-1][0], rows[-1][1]
 
-    def rows(self) -> list:
-        """[(Zeit, Wert, Änderung)] aus der CSV, älteste zuerst; unlesbare Zeilen werden übersprungen."""
+    # ---------- wann ablesen ----------
+
+    def want(self, cfg) -> bool:
+        """Diese Sitzung am Ende ablesen? off = nie, session = immer, random = in ca. badge_random_percent %."""
+        if cfg.badge_mode == "off":
+            return False
+        if cfg.badge_mode == "session":
+            return True
+        return self._rng.random() * 100 < cfg.badge_random_percent
+
+    def session_done(self, result, cfg) -> None:
+        """Nach jeder Sitzung: zählen und, falls abgelesen wurde, mit Sitzungsdaten speichern."""
+        if result.status != "done":
+            return
+        self.sessions += 1
+        if not result.badge_read:
+            log.info("Zähler diesmal nicht abgelesen (%s, %d Sitzung(en) seit letzter Messung)",
+                     mode_label(cfg.badge_mode, cfg.badge_random_percent), self.sessions)
+            return
+        self.record(result.badge, sessions=self.sessions, actions=max(result.actions - 2, 0),
+                    seconds=round(result.seconds), mode=mode_label(cfg.badge_mode, cfg.badge_random_percent))
+        self.sessions = 0
+
+    # ---------- Datei ----------
+
+    def _migrate(self) -> None:
+        """Ältere CSV (weniger Spalten) auf die aktuelle Kopfzeile bringen; vorhandene Werte bleiben."""
+        if not self.csv_path.exists():
+            return
+        rows = self.records(raw=True)
+        if rows and tuple(rows[0]) == HEADER:
+            return
+        body = [r + [""] * (len(HEADER) - len(r)) for r in rows if r and r[0] != "Zeit"]
+        try:
+            self._write_all(body)
+        except OSError:
+            log.exception("Zähler-Verlauf konnte nicht umgestellt werden")
+
+    def _write_all(self, body) -> None:
+        tmp = self.csv_path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f, delimiter=";")
+            w.writerow(HEADER)
+            w.writerows(body)
+        os.replace(tmp, self.csv_path)
+
+    def records(self, raw=False) -> list:
+        """Alle Zeilen als Listen (auch „nicht lesbar“), älteste zuerst; raw=True inkl. Kopfzeile."""
         if not self.csv_path.exists():
             return []
-        out = []
         with open(self.csv_path, encoding="utf-8-sig", newline="") as f:
-            for row in csv.reader(f, delimiter=";"):
-                try:
-                    out.append((row[0], int(row[1]), int(row[2] or 0)))
-                except (IndexError, ValueError):
-                    continue
+            rows = [r for r in csv.reader(f, delimiter=";") if r]
+        return rows if raw else [r + [""] * (len(HEADER) - len(r)) for r in rows if r[0] != "Zeit"]
+
+    def rows(self) -> list:
+        """[(Zeit, Wert, Änderung)] nur gelesene Werte, älteste zuerst."""
+        out = []
+        for r in self.records():
+            try:
+                out.append((r[0], int(r[1]), int(r[2] or 0)))
+            except ValueError:
+                continue
         return out
 
-    def record(self, value):
-        """Gelesenen Wert speichern (None = nicht gelesen, wird ignoriert) und Ansicht aktualisieren."""
-        if value is None:
-            return None
-        value = int(value)
+    def record(self, value, sessions="", actions="", seconds="", mode=""):
+        """Ablesung speichern; value None = nicht lesbar (Zeile mit Status, Wert bleibt). Gibt value zurück."""
+        now = self._now()
         with self._lock:
-            diff = value - self.last if self.last is not None else 0
-            if self.start is None:
-                self.start = value
-            self.last, self.last_time = value, self._now().strftime("%Y-%m-%d %H:%M:%S")
+            minutes = ""
+            if self.last_time:
+                try:
+                    minutes = round((now - datetime.strptime(self.last_time, TIME_FMT)).total_seconds() / 60, 1)
+                except ValueError:
+                    pass
+            if value is None:
+                row = (now.strftime(TIME_FMT), "", "", minutes, sessions, actions, seconds, mode, "nicht lesbar",
+                       WEEKDAYS[now.weekday()])
+            else:
+                value = int(value)
+                diff = value - self.last if self.last is not None else 0
+                status = "erste Messung" if self.last is None else "gestiegen" if diff > 0 else "nicht gestiegen"
+                if self.start is None:
+                    self.start = value
+                self.last, self.last_time = value, now.strftime(TIME_FMT)
+                row = (self.last_time, value, diff, minutes, sessions, actions, seconds, mode, status,
+                       WEEKDAYS[now.weekday()])
             try:
                 self.csv_path.parent.mkdir(parents=True, exist_ok=True)
                 new = not self.csv_path.exists()
@@ -59,12 +133,12 @@ class CoinHistory:
                     w = csv.writer(f, delimiter=";")
                     if new:
                         w.writerow(HEADER)
-                    w.writerow((self.last_time, value, diff))
-                self.write_html()
+                    w.writerow(row)
+                self.write_html(now)
             except OSError:
                 log.exception("Zähler-Verlauf konnte nicht gespeichert werden")
-        log.info("Power Coins: %s (%+d)", value, diff)
-        if self.on_change:
+        log.info("Power Coins: %s (%s)", value if value is not None else "nicht lesbar", row[8])
+        if value is not None and self.on_change:
             self.on_change()
         return value
 
@@ -76,16 +150,26 @@ class CoinHistory:
             text += f" ({self.last - self.start:+d} seit Programmstart)"
         return text
 
-    def write_html(self) -> Path:
-        self.html_path.write_text(render_html(self.rows(), self.csv_path), "utf-8")
+    def write_html(self, now=None) -> Path:
+        self.html_path.write_text(render_html(self.records(), self.csv_path, now), "utf-8")
         return self.html_path
 
     def open_view(self) -> None:
         os.startfile(str(self.write_html()))  # noqa: S606 – nur unter Windows
 
 
-def _chart(rows) -> str:
-    pts = rows[-CHART_POINTS:]
+def _valid(records) -> list:
+    out = []
+    for r in records:
+        try:
+            out.append((r[0], int(r[1])))
+        except ValueError:
+            continue
+    return out
+
+
+def _chart(pts) -> str:
+    pts = pts[-CHART_POINTS:]
     if len(pts) < 2:
         return '<p class="muted">Diagramm erscheint ab zwei Messwerten.</p>'
     w, h, pad = 960, 280, 40
@@ -104,39 +188,65 @@ def _chart(rows) -> str:
             f'<polyline points="{line}"/>{dots}</svg>')
 
 
-def render_html(rows, csv_path) -> str:
-    last = rows[-1][1] if rows else "–"
-    gain = rows[-1][1] - rows[0][1] if rows else 0
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_rows = [r for r in rows if r[0].startswith(today)]
-    gain_today = today_rows[-1][1] - today_rows[0][1] if today_rows else 0
-    body = "".join(f"<tr><td>{html.escape(t)}</td><td>{v}</td>"
-                   f"<td class=\"{'up' if d > 0 else 'down' if d < 0 else ''}\">{d:+d}</td></tr>"
-                   for t, v, d in reversed(rows[-TABLE_ROWS:]))
+def _per_hour(pts) -> str:
+    if len(pts) < 2:
+        return "–"
+    try:
+        first, last = (datetime.strptime(p[0], TIME_FMT) for p in (pts[0], pts[-1]))
+        hours = (last - first).total_seconds() / 3600
+    except ValueError:
+        return "–"
+    return f"{(pts[-1][1] - pts[0][1]) / hours:+.1f}" if hours > 0 else "–"
+
+
+def _cell(i, v) -> str:
+    cls = ""
+    if i == 2 and v not in ("", "0"):
+        cls = ' class="down"' if v.startswith("-") else ' class="up"'
+        v = v if v.startswith("-") else f"+{v}"
+    elif i == 8 and v == "nicht lesbar":
+        cls = ' class="down"'
+    return f"<td{cls}>{html.escape(v)}</td>"
+
+
+def render_html(records, csv_path, now=None) -> str:
+    pts = _valid(records)
+    now = now or datetime.now()
+    last = pts[-1][1] if pts else "–"
+    gain = pts[-1][1] - pts[0][1] if pts else 0
+    today = [p for p in pts if p[0].startswith(now.strftime("%Y-%m-%d"))]
+    gain_today = today[-1][1] - today[0][1] if today else 0
+    failed = sum(1 for r in records if r[8] == "nicht lesbar")
+    head = "".join(f"<th>{html.escape(h)}</th>" for h in HEADER)
+    body = "".join("<tr>" + "".join(_cell(i, v) for i, v in enumerate(r[:len(HEADER)])) + "</tr>"
+                   for r in reversed(records[-TABLE_ROWS:]))
+    csv_link = f'<a href="{Path(csv_path).as_uri()}">{html.escape(Path(csv_path).name)}</a>'
     return f"""<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="{REFRESH_S}"><title>Power Coins: {last} – AwakeToggle</title>
 <style>
 body{{margin:0;padding:32px 40px;background:#140d24;color:#eee8ff;font-family:Segoe UI,sans-serif}}
 h1{{margin:0 0 4px;font-weight:600}} .muted{{color:#a99bd0}}
-.cards{{display:flex;gap:16px;margin:24px 0}}
-.card{{border:1px solid #6b3fd6;border-radius:12px;padding:16px 22px;background:#1e1438;min-width:170px}}
+.cards{{display:flex;flex-wrap:wrap;gap:16px;margin:24px 0}}
+.card{{border:1px solid #6b3fd6;border-radius:12px;padding:16px 22px;background:#1e1438;min-width:150px}}
 .card b{{display:block;font-size:34px;margin-top:4px}}
 svg{{width:100%;max-width:960px;background:#1e1438;border-radius:12px}}
 polyline{{fill:none;stroke:#c86bff;stroke-width:2.5}} circle{{fill:#ff5fa2}}
 .axis{{stroke:#4a3a78}} .lbl{{fill:#a99bd0;font-size:13px}}
-table{{border-collapse:collapse;margin-top:24px;min-width:420px}}
-td,th{{padding:6px 14px;border-bottom:1px solid #2e2250;text-align:left}}
-.up{{color:#5fe39a}} .down{{color:#ff6b6b}} a{{color:#c86bff}}
+table{{border-collapse:collapse;margin-top:24px;font-size:14px}}
+td,th{{padding:6px 12px;border-bottom:1px solid #2e2250;text-align:left;white-space:nowrap}}
+th{{color:#a99bd0;font-weight:500}} .up{{color:#5fe39a}} .down{{color:#ff6b6b}} a{{color:#c86bff}}
 </style></head><body>
 <h1>Power Coins – Verlauf</h1>
-<div class="muted">Aktualisiert sich alle {REFRESH_S} s · Daten: <a href="{Path(csv_path).as_uri()}">{html.escape(Path(csv_path).name)}</a></div>
+<div class="muted">Aktualisiert sich alle {REFRESH_S} s · Daten zum Auswerten (Excel): {csv_link}</div>
 <div class="cards">
 <div class="card">Aktuell<b id="coins-current">{last}</b></div>
 <div class="card">Heute<b>{gain_today:+d}</b></div>
 <div class="card">Gesamt<b>{gain:+d}</b></div>
-<div class="card">Messungen<b>{len(rows)}</b></div>
+<div class="card">Ø pro Stunde<b>{_per_hour(pts)}</b></div>
+<div class="card">Messungen<b>{len(pts)}</b></div>
+<div class="card">Nicht lesbar<b>{failed}</b></div>
 </div>
-{_chart(rows)}
-<table><thead><tr><th>Zeit</th><th>Wert</th><th>Änderung</th></tr></thead><tbody>{body}</tbody></table>
+{_chart(pts)}
+<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>
 </body></html>
 """

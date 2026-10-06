@@ -9,11 +9,12 @@ from pystray import MenuItem as Item
 
 from . import APP_NAME, __version__, autostart, updater
 from . import config as config_mod
-from .config import BROWSE_LENGTH_CHOICES, CHAIN_CHOICES, INTERVAL_CHOICES, JITTER_CHOICES, TIMER_CHOICES, VARIANTS
+from .config import (BADGE_RANDOM_CHOICES, BROWSE_LENGTH_CHOICES, CHAIN_CHOICES, INTERVAL_CHOICES, JITTER_CHOICES,
+                     TIMER_CHOICES, VARIANTS)
 from .core import Status
 from .icons import make_icon
-from .tray_labels import (break_label, browse_length_label, chain_label, interval_label, jitter_label, timer_label,
-                          tooltip)
+from .tray_labels import (badge_mode_label, break_label, browse_length_label, chain_label, interval_label, jitter_label,
+                          timer_label, tooltip)
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ class TrayApp:
         return self.engine.config
 
     def _tooltip(self, status: Status) -> str:
-        return tooltip(status, self._coins_label() if self._cfg().badge_read else "")
+        return tooltip(status, self._coins_label() if self._cfg().badge_mode != "off" else "")
 
     def _coins_label(self) -> str:
         return self.coins.label() if self.coins is not None else "Power Coins: –"
@@ -217,6 +218,29 @@ class TrayApp:
                     lambda: None, checked=lambda i: True, radio=True, enabled=False,
                     visible=lambda i: getattr(self._cfg(), key) not in choices)
 
+    def _badge_item(self, mode, percent=None) -> Item:
+        cfg = self._cfg
+        changes = {"badge_mode": mode} if percent is None else {"badge_mode": mode, "badge_random_percent": percent}
+        return Item(badge_mode_label(mode, percent), lambda: self._change(**changes), radio=True,
+                    checked=lambda i: cfg().badge_mode == mode
+                    and (percent is None or cfg().badge_random_percent == percent))
+
+    def _badge_menu(self) -> Menu:
+        return Menu(
+            self._badge_item("off"),
+            self._badge_item("session"),
+            *[self._badge_item("random", p) for p in BADGE_RANDOM_CHOICES],
+            Item(lambda i: f"Eigener Wert: {badge_mode_label('random', self._cfg().badge_random_percent)}"
+                           " (config.json)",
+                 lambda: None, checked=lambda i: True, radio=True, enabled=False,
+                 visible=lambda i: self._cfg().badge_mode == "random"
+                 and self._cfg().badge_random_percent not in BADGE_RANDOM_CHOICES),
+            Menu.SEPARATOR,
+            Item("Genaue Zahl im Popup lesen (Badge anklicken)",
+                 lambda: self._change(badge_popup=not self._cfg().badge_popup),
+                 checked=lambda i: self._cfg().badge_popup),
+        )
+
     def _menu(self) -> Menu:
         return Menu(
             Item("Aktiv", self._toggle, checked=lambda i: self.engine.active, default=True),
@@ -225,11 +249,10 @@ class TrayApp:
             Menu.SEPARATOR,
             Item("Signal", Menu(*[self._radio(lbl, "signal", k) for k, lbl in SIGNAL_LABELS.items()],
                                 Menu.SEPARATOR, *[self._variant(v) for v in VARIANTS])),
-            Item("Erweiterungs-Zähler vorher/nachher lesen",
-                 lambda: self._change(badge_read=not self._cfg().badge_read),
-                 checked=lambda i: self._cfg().badge_read, enabled=lambda i: self._cfg().signal == "browse"),
+            Item("Power-Coins-Zähler ablesen (nach der Sitzung)", self._badge_menu(),
+                 enabled=lambda i: self._cfg().signal == "browse"),
             Item(lambda i: self._coins_label(), lambda: None, enabled=False,
-                 visible=lambda i: self._cfg().badge_read),
+                 visible=lambda i: self._cfg().badge_mode != "off"),
             Item("Zähler-Verlauf anzeigen (Tabelle + Diagramm)", self._show_history,
                  enabled=lambda i: self.coins is not None),
             Item("Cookie-/Datenschutz-Hinweise automatisch akzeptieren",

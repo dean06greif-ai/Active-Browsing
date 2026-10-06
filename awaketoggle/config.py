@@ -20,6 +20,8 @@ BROWSE_ACTIONS_MIN, BROWSE_ACTIONS_MAX = 3, 100
 BREAK_MINUTES_RANGE = (1, 120)
 BREAK_EVERY_RANGE = (10, 600)
 CHAIN_CHOICES = (0, 10, 20, 40)
+BADGE_MODES = ("off", "session", "random")
+BADGE_RANDOM_CHOICES = (10, 25, 50)
 INTERVAL_MIN, INTERVAL_MAX = 1, 3600
 TIMER_MAX_HOURS = 24
 DEFAULT_UPDATE_REPO = "dean06greif-ai/Active-Browsing"
@@ -44,7 +46,8 @@ class Config:
     browse_break_minutes: tuple = (2, 15)
     browse_break_every_minutes: tuple = (60, 240)
     browse_chain_percent: int = 20
-    badge_read: bool = True
+    badge_mode: str = "session"
+    badge_random_percent: int = 25
     badge_popup: bool = True
     badge_extension: str = ""
     away_power: bool = True
@@ -89,7 +92,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         th = d.timer_hours
     values["timer_hours"] = _num(th)
 
-    for key in ("start_active", "verbose_log", "badge_read", "badge_popup", "away_power", "away_energy_saver",
+    for key in ("start_active", "verbose_log", "badge_popup", "away_power", "away_energy_saver",
                 "browse_accept_cookies", "browse_breaks"):
         v = raw.get(key, getattr(d, key))
         if not isinstance(v, bool):
@@ -151,6 +154,18 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         pw = d.browse_private_words
     values["browse_private_words"] = tuple(dict.fromkeys(v.strip().lower() for v in pw))
 
+    bm = raw.get("badge_mode", "off" if raw.get("badge_read") is False else d.badge_mode)
+    if bm not in BADGE_MODES:
+        warnings.append(f"badge_mode={bm!r} ungültig (off, session oder random), nutze {d.badge_mode}")
+        bm = d.badge_mode
+    values["badge_mode"] = bm
+
+    br = raw.get("badge_random_percent", d.badge_random_percent)
+    if not _is_number(br) or not 1 <= br <= 100:
+        warnings.append(f"badge_random_percent={br!r} ungültig (1–100), nutze {d.badge_random_percent}")
+        br = d.badge_random_percent
+    values["badge_random_percent"] = int(br)
+
     bx = raw.get("badge_extension", d.badge_extension)
     if not isinstance(bx, str):
         warnings.append(f"badge_extension={bx!r} ungültig (Teil des Erweiterungsnamens oder \"\"), nutze \"\"")
@@ -171,7 +186,7 @@ def validate(raw: dict) -> tuple[Config, list[str]]:
         ur = d.update_repo
     values["update_repo"] = ur.strip()
 
-    unknown = sorted(set(raw) - set(values))
+    unknown = sorted(set(raw) - set(values) - {"badge_read"})  # badge_read: alt (bis v1.8.0), ersetzt durch badge_mode
     if unknown:
         warnings.append(f"Unbekannte Schlüssel ignoriert: {', '.join(unknown)}")
     return Config(**values), warnings

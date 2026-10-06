@@ -32,12 +32,12 @@ def parse_popup(texts, title=POPUP_TITLE):
 
 
 def compare(before, after):
-    """Liefert (Text für Tooltip/Protokoll, Auffälligkeit oder None)."""
-    if before is None and after is None:
-        return "", None
-    text = f"Zähler {before if before is not None else '?'} → {after if after is not None else '?'}"
-    if before is None or after is None:
-        return text, "Zähler konnte nicht gelesen werden"
+    """Liefert (Text für Tooltip/Protokoll, Auffälligkeit oder None); before = letzter bekannter Wert."""
+    if after is None:
+        return f"Zähler {before if before is not None else '?'} → ?", "Zähler konnte nicht gelesen werden"
+    if before is None:
+        return f"Zähler {after}", None
+    text = f"Zähler {before} → {after}"
     if after <= before:
         return text, f"Zähler nicht gestiegen ({before} → {after})"
     return text, None

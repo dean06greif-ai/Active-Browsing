@@ -119,16 +119,16 @@ class Win32Api:
         if self._runner is None:
             from .browse_runner import Runner
             self._runner = Runner(Desktop())
+        coins = self.coins
         badge = None
-        if cfg.badge_read:
+        if coins.want(cfg) if coins is not None else cfg.badge_mode != "off":
             from .badge_win import read_badge
-
-            def badge(h):
-                value = read_badge(h, cfg.badge_extension, cfg.badge_popup)
-                if self.coins is not None:
-                    self.coins.record(value)
-                return value
-        return self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log, badge, cfg.browse_private_words)
+            badge = lambda h: read_badge(h, cfg.badge_extension, cfg.badge_popup)  # noqa: E731
+        result = self._runner.run(plan, cfg.browse_processes, cancel, cfg.verbose_log, badge,
+                                  cfg.browse_private_words, coins.last if coins is not None else None)
+        if coins is not None:
+            coins.session_done(result, cfg)
+        return result
 
     def tick(self) -> int:
         return kernel32.GetTickCount()

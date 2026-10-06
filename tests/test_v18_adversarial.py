@@ -93,13 +93,14 @@ def test_history_csv_with_garbage_rows_is_tolerated(tmp_path):
     assert h.label() == "Power Coins: 487"
 
 
-def test_history_record_accepts_float_and_ignores_none(tmp_path):
+def test_history_record_accepts_float_and_logs_unreadable(tmp_path):
     times = iter(datetime(2026, 1, 1, 10, m) for m in range(5))
     h = CoinHistory(tmp_path / "c.csv", now=lambda: next(times))
     assert h.record(None) is None
     assert h.record(100.9) == 100  # truncates like int()
     assert h.record(105) == 105
-    assert h.rows()[-1] == ("2026-01-01 10:01:00", 105, 5)
+    assert h.rows()[-1] == ("2026-01-01 10:02:00", 105, 5)
+    assert h.records()[0][8] == "nicht lesbar" and h.records()[0][1] == ""
 
 
 def test_history_label_before_any_read(tmp_path):

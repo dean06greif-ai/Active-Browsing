@@ -109,7 +109,8 @@ Datei: `%LOCALAPPDATA%\AwakeToggle\config.json` (wird beim ersten Start angelegt
 | `browse_processes` | Liste von Programmnamen | **zusätzliche** Browser; immer erkannt: Power Browser, Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Thorium, Arc, Yandex, `power.exe` und jedes Programm mit „browser“ oder „power…“ im Namen (außer PowerShell/PowerToys). Wird keiner gefunden, wird das oberste normale Programmfenster genommen (Explorer/Taskleiste/Startmenü und unsichtbare Windows-Fenster werden ignoriert) |
 | `browse_actions_max` | 3–100 | höchstens so viele Aktionen pro Browser-Test-Durchlauf (mindestens ein Drittel davon) |
 | `browse_exclude` | Liste von Aktions-IDs | diese Aktionen nie ausführen (IDs siehe Tabelle unten) |
-| `badge_read` | `true` / `false` | Zähler (Power Coins) vor und nach jedem Browser-Test lesen |
+| `badge_mode` | `off` / `session` / `random` | Power-Coins-Zähler ablesen: nie / **einmal nach jeder Sitzung** (Standard) / zufällig ab und zu nach einer Sitzung (natürlicher). Nie während oder nach einzelnen Aktionen |
+| `badge_random_percent` | 1–100 | bei `random`: in so viel Prozent der Sitzungen wird abgelesen (Standard 25) |
 | `badge_popup` | `true` / `false` | `true` (Standard): Badge anklicken und die **genaue Zahl im Popup** lesen (z. B. 487); `false`: nur die Zahl auf dem Button (ungenau, z. B. „1k“ = 1000) |
 | `browse_accept_cookies` | `true` / `false` | Cookie-/Datenschutz-Hinweise automatisch wegklicken (meist „Alle akzeptieren“, ab und zu „Nur notwendige“) |
 | `browse_breaks` | `true` / `false` | lange Pausen bei langem Betrieb (Tray: „Lange Pausen …“) |
@@ -276,8 +277,17 @@ Die früheren Aktionen `inprivate_fenster` und `tab_wiederherstellen` gibt es ni
   zu (keine Eingaben) und merkt sich den fertigen Titel – so sammeln sich bei langen Läufen keine Testfenster an.
 - Ausschalten, Bildschirmsperre und Beenden stoppen den Durchlauf ebenfalls.
 
-**Power-Coins-Zähler:** Vor und nach jedem Durchlauf klickt der Test einmal auf das Badge oben rechts (z. B. „1k“),
-liest im aufgehenden Popup „Power Coins“ die große Zahl (z. B. **487**) – zuerst über UI Automation, sonst per
+**Power-Coins-Zähler:** Abgelesen wird **nur einmal am Ende einer Sitzung** (nie vorher, nie nach einzelnen
+Aktionen). Tray → *Power-Coins-Zähler ablesen (nach der Sitzung)*:
+- *Aus (nie ablesen)* – das Badge wird nie angeklickt.
+- *Nach jeder Sitzung* – regelmäßig nach jeder fertigen Sitzung.
+- *Zufällig ab und zu (ca. 10 / 25 / 50 % der Sitzungen)* – natürlicher; eigener Wert über `badge_random_percent`.
+- *Genaue Zahl im Popup lesen* – an: Badge anklicken (genau, 487); aus: nur Zahl auf dem Badge (ungenau, „1k“).
+
+Abgebrochene Sitzungen (Sie waren aktiv) werden nicht abgelesen; nach der Sitzung wartet der Test kurz (0,8–3 s)
+und prüft noch einmal, dass Sie nicht gerade selbst arbeiten. Verglichen wird immer mit der letzten Messung.
+
+Beim Ablesen klickt der Test einmal auf das Badge oben rechts (z. B. „1k“), liest im aufgehenden Popup „Power Coins“ die große Zahl (z. B. **487**) – zuerst über UI Automation, sonst per
 Windows-Texterkennung (OCR) – und schließt das Popup wieder (Esc, notfalls zweiter Klick); die Maus kommt an ihren
 Platz zurück. Die Zahl auf dem Badge selbst ist dafür zu ungenau („1k“ = 1000, kleine Zuwächse unsichtbar).
 
@@ -286,7 +296,12 @@ Wo Sie den Wert sehen:
 - **Tooltip** des Tray-Symbols: letzte Zeile `Power Coins: …`, dazu im Ergebnis `Zähler 480 → 487, …`.
 - **Tray → „Zähler-Verlauf anzeigen (Tabelle + Diagramm)“** öffnet `%LOCALAPPDATA%\AwakeToggle\power_coins.html`
   (aktuell / heute / gesamt, Diagramm, Tabelle; lädt sich alle 30 s neu).
-- **CSV:** `%LOCALAPPDATA%\AwakeToggle\power_coins.csv` (`Zeit;Wert;Änderung`, öffnet direkt in Excel).
+- **CSV zum Auswerten:** `%LOCALAPPDATA%\AwakeToggle\power_coins.csv` (Trennzeichen `;`, öffnet direkt in Excel).
+  Spalten: `Zeit` (Datum + Uhrzeit), `Wert`, `Änderung`, `Minuten seit letzter Messung`,
+  `Sitzungen seit letzter Messung`, `Aktionen` (der letzten Sitzung), `Sitzungsdauer (s)`, `Modus`,
+  `Status` (erste Messung / gestiegen / nicht gestiegen / nicht lesbar), `Wochentag`. Eine ältere CSV aus v1.8
+  wird automatisch auf die neuen Spalten umgestellt, alle Werte bleiben erhalten.
+- Die Verlaufsseite zeigt zusätzlich *Ø pro Stunde* und die Zahl der nicht lesbaren Messungen.
 - **Protokoll:** `Zähler gelesen: 487`, `Power Coins: 487 (+7)`; ist der Zähler nicht gestiegen, steht
   `Zähler nicht gestiegen` als Auffälligkeit darin.
 
