@@ -1,0 +1,21 @@
+{
+  "summary": "Reviewed and tested v1.8 Power-Coins feature (popup reading + CoinHistory CSV/HTML + tray label/tooltip wiring) for the Windows tray tool AwakeToggle. Ran full pytest suite: 158 existing tests pass. Added 9 adversarial tests in tests/test_v18_adversarial.py covering popup parser edges (1k short-form, NBSP/narrow-space thousands, None/empty), read_popup behaviour (never-gets-text, tooltip-size windows ignored, largest-popup chosen when multiple appear), CSV garbage-row tolerance, record() float handling, and tooltip 127-char cap. All 167 tests pass. No bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_v18.py", "/app/tests/test_v18_adversarial.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "badge.py parse_popup: correctly anchors to 'Power Coins' title, requires plain-number line, rejects '1k' badge short-form, supports '.', ',', regular/non-breaking/narrow spaces as thousands separators. Solid.",
+    "badge_win.read_popup: well-structured – polls for popup window (POPUP_MIN_PX filter avoids tooltip-sized hints), polls for UIA text, OCR fallback, always closes popup (Esc then second click fallback) and restores cursor via try/finally. Does NOT double-click when no popup appeared (verified by test). Good.",
+    "history.CoinHistory: thread-safe (self._lock), ignores None, loads last value from CSV on restart, skips malformed CSV rows, writes HTML with auto-refresh + SVG chart + table. CSV header 'Zeit;Wert;Änderung' with utf-8-sig BOM on creation. Robust.",
+    "Wiring verified: app.py creates CoinHistory(base/'power_coins.csv') and assigns to api.coins + passes to TrayApp; Win32Api.browse records every value via self.coins.record(value); tray.py menu has disabled label line + 'Zähler-Verlauf anzeigen (Tabelle + Diagramm)' item; tooltip includes coins line and keeps total ≤127 chars by trimming status.",
+    "config badge_popup default=True confirmed in config.py line 48. Round-trips through the raw-config bool parser (line 92).",
+    "Minor nit (not a bug): history.render_html uses datetime.now() directly for 'today' bucket instead of the injectable self._now – harmless for prod but makes that one branch slightly less deterministic in tests. Current test suite doesn't rely on it."
+  ],
+  "updated_files": ["/app/tests/test_v18_adversarial.py"],
+  "success_rate": {"backend": "100% (167/167)", "frontend": "N/A (no frontend)"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pure-python pytest project (Windows tray app) at /app/awaketoggle. Windows APIs mocked via Desk fake in tests/test_v18.py – reuse it for any further popup/read_badge testing. Full suite: `cd /app && python -m pytest tests -q` → 167 passed."
+}

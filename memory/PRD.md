@@ -39,7 +39,7 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - Befund: bisher wurde nur die Zahl auf dem Toolbar-Badge gelesen („1k“ → 1000), nicht die 487 im Popup → kleine Zuwächse unsichtbar, falsche „Zähler nicht gestiegen“
 - badge_win.read_popup: Badge anklicken, neues Popup-Fenster (gleicher Prozess, größtes) finden, Text per UIA (bis 5 s, wartet auf Web-Inhalt), sonst OCR; badge.parse_popup: erste reine Zahl nach „Power Coins“; Popup per Esc schließen, sonst 2. Klick; Maus zurück. Config badge_popup (Standard true)
 - history.CoinHistory: power_coins.csv (Zeit;Wert;Änderung) + power_coins.html (Karten, SVG-Diagramm, Tabelle, Auto-Reload 30 s); Tray-Zeile „Power Coins: 487 (+x seit Programmstart)“, Tooltip-Zeile, Menü „Zähler-Verlauf anzeigen“
-- --selftest zeigt Wert auf Button + im Popup; 158 pytest-Tests grün
+- --selftest zeigt Wert auf Button + im Popup; 167 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
 
 ## Backlog
 - P0 --selftest auf echtem Windows: „Zähler im Popup (Power Coins, genau): 487“ prüfen
