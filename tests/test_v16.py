@@ -124,7 +124,7 @@ def test_long_runs_close_old_tabs_but_never_user_tabs():
         assert set(desk.wins) == {USER} and desk.wins[USER]["tabs"] == 3
         assert [k for h, k in desk.sent if h == USER] == ["ctrl+n"]
         assert peak <= MAX_TABS + 1  # +1: Quelltext-Tab (Strg+U) kurzzeitig
-    assert closed_old > 20
+    assert closed_old > 3  # Tab-Limit 5–18 (v1.11): seltener nötig als bei 3–6
 
 
 def test_leftover_window_is_closed_even_if_its_page_finished_loading_after_abort():

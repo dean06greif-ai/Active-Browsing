@@ -141,8 +141,10 @@ class FakeDesk:
             self.wins[h]["tabs"] += 1
             return
         banner = self.wins[h].get("banner")
+        x, y = self.pos
+        if banner and self.wins[h].get("sticky") and not (300 <= x <= 460 and 500 <= y <= 540):
+            banner = None  # hängender Hinweis: Klick daneben ist ein normaler Seitenklick
         if banner:
-            x, y = self.pos
             assert 300 <= x <= 460 and 500 <= y <= 540, ("Klick neben den Button", self.pos)
             self.accepted.append((h, self._consent[1]))
             if not self.wins[h].get("sticky"):

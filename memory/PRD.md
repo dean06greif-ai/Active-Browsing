@@ -55,6 +55,15 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - Popup-Erkennung: auch vorher unsichtbare (wiederverwendete) Fenster; ohne Popup-Fenster OCR im Bereich unter dem Badge
 - 222 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
 
+## Umgesetzt v1.11.0 (2026-06) – Limits + realistischeres Browsing
+- Tab-Limit gelockert: 5–18 je eigenem Fenster (Dreiecksverteilung, meist ~9), MAX_TABS 19
+- Fenster-Limit wie Tab-Limit, nur für selbst geöffnete Fenster: 2–4 je Durchlauf (meist 2); Aktion alte_fenster_schliessen (meist ältestes: hinwechseln, schauen, zu; sonst aktuelles); Step ("close_window","oldest"); Strg+Umschalt+W nur wenn alle Tabs nachweislich eigen (sonst Strg+W einzeln, mit fremden Tabs bleibt offen); Nutzerfenster nie angefasst
+- Fix: Tab-Ereignisse je Fenster (vorher konnte ein eigener Tab nach Fensterwechsel als fremd gelten)
+- Sanftes Scrollen: Step ("scroll", deltas, gaps) – Schwung mit sin-Profil in 5–28 Kleinschritten (<120) bzw. langsames Weiterrollen
+- Themen-Stil je Sitzung: ein_thema / kette (4–8 Suchen, 65 % verwandtes Thema) / bunt; Interest mit budget, used (keine Doppelten), root/anchor (aufbauend), again(); queries.RELATED + related_theme; GENERIC_REFINES
+- 69 Themen (+38), 17 Personas (+4: Outdoor-Fan, Bücherwurm, Eigenheim-Planer, Nachhaltig-Lebende)
+- 233 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
+
 ## Backlog
 - P0 --selftest auf echtem Windows: „Zähler im Popup (Power Coins, genau): 487“ prüfen
 - P1 Echter Lauf mit Power Browser, Inkognito-Titel prüfen (--selftest)

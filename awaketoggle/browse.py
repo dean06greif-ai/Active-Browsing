@@ -4,7 +4,11 @@ Ein Durchlauf ist eine kleine Surf-Sitzung: ein oder mehrere Anliegen (z. B. „
 suchen, Ergebnis anklicken, lesen, zurück, nächstes Ergebnis, Suche verfeinern, Tabs für Nebenthemen.
 Jede Sitzung hat eine Person mit festen Gewohnheiten (bevorzugtes Tastenkürzel, Tempo, Neugier).
 Jeder Durchlauf hat eine andere Browsing-Persönlichkeit (personas.py), die sich abwechseln.
-Eigene Tabs werden ab und zu wieder geschlossen (zufällig 3–6 je Fenster), damit nicht zu viele offen bleiben.
+Eigene Tabs werden ab und zu wieder geschlossen (zufällig 5–18 je Fenster), damit nicht zu viele offen bleiben.
+Genauso eigene Fenster (zufällig 2–4 je Durchlauf): ist es eins zu viel, wird ein selbst geöffnetes (meist das älteste)
+wieder geschlossen – die Fenster des Nutzers werden nie angefasst.
+Jede Sitzung hat einen Themen-Stil: ganze Sitzung ein Thema, Kette (4–8 aufbauende Suchen, dann meist ein verwandtes
+Thema) oder bunt gemischt.
 Bei langem Betrieb kommt ab und zu eine lange Pause (Fenster minimiert, danach wieder geöffnet).
 Selten genutzte Browserfunktionen kommen nur gelegentlich und höchstens einmal je Durchlauf vor.
 Alles passiert in eigenen, neu geöffneten normalen Fenstern (nie Inkognito/InPrivate); am Ende werden sie geschlossen.
@@ -46,9 +50,18 @@ def is_private(title: str, extra=()) -> bool:
     return any(w in t for w in PRIVATE_WORDS) or any(w and w in t for w in extra)
 
 
-TAB_LIMIT = (3, 6)  # so viele eigene Tabs je Fenster ungefähr, danach werden alte geschlossen
+TAB_LIMIT = (5, 18)  # so viele eigene Tabs je Fenster ungefähr, danach werden alte geschlossen
+TAB_LIMIT_MODE = 9  # meist um die 9, selten bis 18
 MAX_TABS = TAB_LIMIT[1] + 1  # absolute Obergrenze (kurzzeitig ein Tab über dem Limit)
-MAX_WINDOWS = 2
+WINDOW_LIMIT = (2, 4)  # so viele eigene Fenster je Durchlauf ungefähr, danach wird ein eigenes geschlossen
+WINDOW_LIMIT_MODE = 2
+MAX_WINDOWS = WINDOW_LIMIT[1] + 1  # absolute Obergrenze (kurzzeitig ein Fenster über dem Limit)
+TOPIC_MODES = {  # Themen-Stil einer Sitzung: (Gewicht, Suchen je Anliegen, Anteil Wechsel zu verwandtem Thema)
+    "ein_thema": (3, (40, 40), 1.0),
+    "kette": (5, (4, 8), 0.65),
+    "bunt": (2, (2, 4), 0.25),
+}
+TOPIC_FOCUS = {"ein_thema": 1.6, "kette": 1.3, "bunt": 1.0}  # wie gern verfeinert wird statt neu gesucht
 LOAD_TIMEOUT_S = 15.0
 
 BLOCKED = frozenset({
@@ -79,6 +92,12 @@ SEARCH_KEYS = ("ctrl+l", "ctrl+e", "alt+d", "ctrl+k", "f4")
 TAB_KEYS = ("ctrl+tab", "ctrl+pgdn", "ctrl+shift+tab", "ctrl+pgup")
 CLOSE_KEYS = ("ctrl+w", "ctrl+f4")
 TIDY_WAYS = ("aelteste", "aktuelle", "durchblaettern")
+WINDOW_TIDY_WAYS = ("aeltestes", "aktuelles")
+
+
+def limit(rng, lo: int, hi: int, mode: int) -> int:
+    """Zufallsgrenze zwischen lo und hi, meist in der Nähe von mode (natürlicher als gleichverteilt)."""
+    return min(hi, max(lo, round(rng.triangular(lo, hi, mode))))
 
 
 def combo(text: str) -> tuple:
@@ -130,6 +149,9 @@ class Model:
     used: set = field(default_factory=set)
     unread_searches: int = 0  # Suchen hintereinander, ohne etwas gelesen zu haben
     last_tidy: str = ""  # zuletzt benutzte Art, alte Tabs zu schließen (nicht zweimal gleich hintereinander)
+    win_limit: int = WINDOW_LIMIT[0]  # ab hier wird ein eigenes Fenster geschlossen
+    last_win_tidy: str = ""
+    topic: str = "kette"  # Themen-Stil der Sitzung (TOPIC_MODES)
 
     @property
     def w(self) -> Win:
@@ -217,8 +239,12 @@ class Builder:
         combo(c)
         self.steps.append(("new_window", c))
 
-    def close_window(self):
-        self.steps.append(("close_window",))
+    def close_window(self, oldest: bool = False):
+        self.steps.append(("close_window", "oldest") if oldest else ("close_window",))
+
+    def scroll(self, deltas, gaps):
+        """Sanftes Scrollen: viele kleine Raddrehungen kurz hintereinander (wie hochauflösende Räder/Touchpads)."""
+        self.steps.append(("scroll", tuple(deltas), tuple(round(g, 3) for g in gaps)))
 
     def long_break(self, seconds: float):
         self.steps.append(("break", round(seconds, 1)))
@@ -230,16 +256,35 @@ class Builder:
 
 # ---------- Bausteine ----------
 
+def _flick(b, rng, notches: int, down: bool = True):
+    """Ein Schwung mit dem Mausrad: sanft anlaufen, gleiten, abbremsen – in vielen kleinen Schritten."""
+    total = notches * 120 * rng.uniform(0.8, 1.2)
+    n = min(28, rng.randint(5, 8) * notches)
+    sharp = rng.uniform(0.8, 1.6)
+    profile = [math.sin(math.pi * (i + 0.5) / n) ** sharp for i in range(n)]
+    scale = total / sum(profile)
+    sign = -1 if down else 1
+    b.scroll([sign * max(1, round(p * scale)) for p in profile], [rng.uniform(0.010, 0.026) for _ in profile])
+
+
+def _creep(b, rng, down: bool = True):
+    """Beim Lesen langsam weiterrollen: kleine Stücke mit kurzen Lesepausen dazwischen."""
+    n = rng.randint(3, 8)
+    sign = -1 if down else 1
+    b.scroll([sign * rng.randint(12, 40) for _ in range(n)], [rng.uniform(0.15, 0.7) for _ in range(n)])
+
+
 def _read(b, m, rng, lines=(2, 7)):
-    """Lesen: Scroll-Schübe (mehrere kurze Raddrehungen), Lesepausen, mal zurückscrollen, Maus wandert mit."""
+    """Lesen: sanfte Scroll-Schwünge oder langsames Weiterrollen, Lesepausen, mal zurückscrollen, Maus wandert mit."""
     m.unread_searches = 0
     b.point((0.15, 0.7), (0.25, 0.75))
     b.dwell(1.2 * m.person.reader, 0.4)
     for _ in range(rng.randint(*lines)):
-        down = 1 if rng.random() < 0.85 else -1
-        for _ in range(rng.choices((1, 2, 3, 4), (3, 4, 2, 1))[0]):
-            b.wheel(-down * 120)
-            b.wait(0.04, 0.16)
+        down = rng.random() < 0.85
+        if rng.random() < 0.35:
+            _creep(b, rng, down)
+        else:
+            _flick(b, rng, rng.choices((1, 2, 3, 4), (3, 4, 2, 1))[0], down)
         b.dwell(2.2 * m.person.reader, 0.6, cap=25)
         if rng.random() < 0.3:
             b.nudge()
@@ -269,16 +314,34 @@ def _searched(b, m, rng, q, label):
     if rng.random() < 0.6:  # Ergebnisliste überfliegen
         b.point((0.1, 0.5), (0.2, 0.7))
         for _ in range(rng.randint(1, 3)):
-            b.wheel(-120 * rng.randint(1, 2))
+            _flick(b, rng, rng.randint(1, 2))
             b.dwell(1.0, 0.5)
 
 
 # ---------- Aktionen: (Gewicht abhängig vom Zustand, Aufbau der Schritte) ----------
 
+def _next_interest(m, rng):
+    """Nächstes Anliegen je nach Themen-Stil: gleiches Thema, verwandtes Thema oder etwas ganz anderes."""
+    _, budget, drift = TOPIC_MODES[m.topic]
+    old, n = m.interest, rng.randint(*budget)
+    weights = m.person.persona.weights
+    if old is None:
+        return queries.Interest(rng, weights=weights, budget=n)
+    if m.topic == "ein_thema":
+        return queries.Interest(rng, theme=old.theme, city=old.city, budget=n)
+    if rng.random() < drift:
+        return queries.Interest(rng, theme=queries.related_theme(old.theme, rng), city=old.city, budget=n)
+    return queries.Interest(rng, weights=weights, budget=n)
+
+
 def _search(b, m, rng):
-    """Neues Anliegen suchen."""
-    m.interest = queries.Interest(rng, weights=m.person.persona.weights)
-    q = m.interest.first()
+    """Suchen: beim laufenden Anliegen bleiben (neuer Einstieg ins Thema) oder ein neues Anliegen anfangen."""
+    stay = m.interest is not None and not m.interest.exhausted and (m.topic != "bunt" or rng.random() < 0.3)
+    if stay:
+        q = m.interest.again()
+    else:
+        m.interest = _next_interest(m, rng)
+        q = m.interest.first()
     _searched(b, m, rng, q, _type_query(b, m, rng, q))
 
 
@@ -432,13 +495,33 @@ def _switch_tab(b, m, rng):
 def _new_window(b, m, rng=None):
     b.new_window("ctrl+n")
     b.wait(0.8, 2.0)
-    m.wins.append(Win(limit=(rng or b.rng).randint(*TAB_LIMIT)))
+    m.wins.append(Win(limit=limit(rng or b.rng, *TAB_LIMIT, TAB_LIMIT_MODE)))
 
 
 def _close_window(b, m, rng):
     b.close_window()
     b.wait(0.6, 1.5)
     m.wins.pop()
+
+
+def _tidy_windows(b, m, rng):
+    """Eigene Fenster begrenzen wie beim Tab-Limit: eins zu viel offen → ein selbst geöffnetes schließen.
+
+    Meist das älteste (kurz hinwechseln, draufschauen, zu), manchmal das aktuelle. Nie das letzte eigene Fenster,
+    nie ein Fenster des Nutzers (die gehören nicht zum Test)."""
+    excess = max(len(m.wins) - m.win_limit, 0)
+    n = min(len(m.wins) - 1, max(1, excess))
+    way = rng.choice([x for x in WINDOW_TIDY_WAYS if x != m.last_win_tidy]) if rng.random() < 0.6 else "aeltestes"
+    m.last_win_tidy = way
+    for _ in range(n):
+        b.dwell(0.8, 0.5)
+        if way == "aeltestes":
+            b.close_window(oldest=True)
+            m.wins.pop(0)
+        else:
+            b.close_window()
+            m.wins.pop()
+        b.dwell(1.2, 0.5)  # wieder im anderen Fenster orientieren
 
 
 def _back_forward(b, m, rng):
@@ -502,7 +585,7 @@ def _fullscreen(b, m, rng):
     b.wait(1.5, 4.0)
     if m.w.loaded and rng.random() < 0.5:
         b.point()
-        b.wheel(-240)
+        _flick(b, rng, 2)
         b.wait(0.5, 1.5)
     b.key("f11")
     b.wait(0.8, 1.5)
@@ -605,7 +688,8 @@ def _can_refine(m):
 ACTIONS = {
     # Kern: so verbringen Menschen fast die ganze Zeit
     "suche": (lambda m: 6.0 if not m.w.loaded else (0.5 if _can_refine(m) else 1.5), _search),
-    "suche_verfeinern": (lambda m: (2.2 if _results(m) else 1.0) if _can_refine(m) else 0, _refine),
+    "suche_verfeinern": (lambda m: (2.2 if _results(m) else 1.0) * TOPIC_FOCUS[m.topic] if _can_refine(m) else 0,
+                         _refine),
     "ergebnis_oeffnen": (lambda m: 4.5 if _results(m) else 0, _open_result),
     "im_tab_oeffnen": (lambda m: 2.5 * m.person.curiosity if _results(m) and m.w.tabs <= m.w.limit else 0,
                        _open_result_tab),
@@ -623,8 +707,11 @@ ACTIONS = {
     "suche_abbrechen": (lambda m: 0.2, _search_cancel),
     "neu_laden": (lambda m: 0.2 if m.w.loaded else 0, _reload),
     "www_com": (lambda m: 0.25, _www_com),
-    "neues_fenster": (lambda m: 0.12 if len(m.wins) < MAX_WINDOWS and m.last_query else 0, _new_window),
-    "fenster_schliessen": (lambda m: 0.4 + m.w.tabs * 0.1 if len(m.wins) > 1 else 0, _close_window),
+    "neues_fenster": (lambda m: 0 if not m.last_query else 0.22 if len(m.wins) < m.win_limit
+                      else 0.03 if len(m.wins) == m.win_limit else 0, _new_window),
+    "fenster_schliessen": (lambda m: 0.25 + m.w.tabs * 0.03 if len(m.wins) > 1 else 0, _close_window),
+    "alte_fenster_schliessen": (lambda m: 0 if len(m.wins) < 2 else 3.5 if len(m.wins) > m.win_limit
+                                else 0.4 if len(m.wins) == m.win_limit else 0.05, _tidy_windows),
     # Selten (höchstens einmal je Durchlauf)
     "zoom": (lambda m: 0.15 if m.w.loaded else 0, _zoom),
     "tab_duplizieren": (lambda m: 0.08 if m.w.loaded and m.w.tabs <= m.w.limit else 0, _duplicate_tab),
@@ -660,7 +747,8 @@ def make_scenario(cfg, rng: random.Random, persona: personas.Persona = None, pau
     persona = persona or personas.next_persona(rng)
     style = rng.choices(tuple(STYLES), persona.styles)[0]
     b = Builder(rng, style, cfg.browse_accept_cookies, persona.decline)
-    m = Model(person=Person.random(rng, persona))
+    topic = rng.choices(tuple(TOPIC_MODES), [v[0] for v in TOPIC_MODES.values()])[0]
+    m = Model(person=Person.random(rng, persona), win_limit=limit(rng, *WINDOW_LIMIT, WINDOW_LIMIT_MODE), topic=topic)
     _new_window(b, m)
     actions = [("start (neues Fenster)", b.take())]
     n = rng.randint(max(3, cfg.browse_actions_max // 3), cfg.browse_actions_max)
@@ -688,4 +776,5 @@ def make_scenario(cfg, rng: random.Random, persona: personas.Persona = None, pau
         _close_window(b, m, rng)
     actions.append(("aufräumen", b.take()))
     extra = f", lange Pause {pause_s / 60:.0f} min" if pause_s else ""
-    return Plan("browse", tuple(actions), f"Browser-Test ({persona.name}, {style}, {n} Aktionen{extra})")
+    themes = {"ein_thema": "ein Thema", "kette": "Themenkette", "bunt": "bunt"}[topic]
+    return Plan("browse", tuple(actions), f"Browser-Test ({persona.name}, {style}, {themes}, {n} Aktionen{extra})")

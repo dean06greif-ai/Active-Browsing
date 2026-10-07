@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 
 from .badge import compare
-from .browse import CLOSE_KEYS, MAX_TABS, TAB_KEYS, BrowserNames, combo, is_private
+from .browse import CLOSE_KEYS, MAX_TABS, TAB_KEYS, VK, BrowserNames, combo, is_private
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,9 @@ MASK = 0xFFFFFFFF
 OWN_SLACK_MS = 400
 POLL_S = 0.1
 NEW_WINDOW_TIMEOUT_S = 6.0
-CLOSE_TRIES = 30
+CLOSE_TRIES = MAX_TABS + 12
+CLOSE_WINDOW_VKS = (VK["ctrl"], VK["shift"], VK["w"])  # nur hier, nur wenn alle Tabs nachweislich eigene sind
+CLOSE_WINDOW_WAIT_S = 2.0
 SLOW_LOAD_S = 5.0
 TOOLBAR_PX = 150
 POPUP_AFTER_CLICK_S = 8.0
@@ -67,7 +69,7 @@ class Runner:
         self._private_words = ()
         self._own_tabs = {}  # Fensterhandle -> IDs der selbst geöffneten Tabs (nur wenn die Tableiste lesbar ist)
         self._foreign_tabs = set()
-        self._tab_events = []  # Zeitpunkte eigener Aktionen, die einen Tab öffnen können (noch ohne Tab)
+        self._tab_events = {}  # Fenster -> Zeitpunkte eigener Aktionen, die dort einen Tab öffnen können
 
     # ---------- Ablauf ----------
 
@@ -222,13 +224,14 @@ class Runner:
             log.warning("Tab-IDs im Testfenster nicht stabil – Tabs werden dort nur noch nach Plan gezählt")
             del self._own_tabs[h]
             return None
-        if fresh and len(fresh) <= len(self._tab_events):
+        events = self._tab_events.setdefault(h, [])
+        if fresh and len(fresh) <= len(events):
             own.update(fresh)
-            del self._tab_events[:len(fresh)]
+            del events[:len(fresh)]
         elif fresh:  # mehr neue Tabs als eigene Aktionen: im Zweifel fremd, also nie angefasst
             self._foreign_tabs.update(fresh)
             log.info("%d fremde(r) Tab(s) im Testfenster – zählt nicht zum Tab-Limit, wird nie angefasst", len(fresh))
-        self._tab_events = [t for t in self._tab_events if now - t <= OWN_TAB_GRACE_S]
+        events[:] = [t for t in events if now - t <= OWN_TAB_GRACE_S]
         own.intersection_update(ids)
         return tabs
 
@@ -405,7 +408,7 @@ class Runner:
             return
         self._send(c)
         if c in TAB_MAY_OPEN_KEYS:
-            self._tab_events.append(self._clock())
+            self._tab_events.setdefault(h, []).append(self._clock())
         if c in TAB_SWITCH_KEYS:
             self._wait(0.2)
             if not self._front_own_tab(h, c if c in TAB_KEYS else "ctrl+tab"):
@@ -437,6 +440,13 @@ class Runner:
     def _do_wheel(self, delta):
         self.desk.wheel(delta)
         self._mark()
+
+    def _do_scroll(self, deltas, gaps):
+        for delta, gap in zip(deltas, gaps):
+            self._check_input()
+            self.desk.wheel(delta)
+            self._mark()
+            self._sleep(gap)
 
     def _do_point(self, fx, fy):
         d, h = self.desk, self._target()
@@ -485,7 +495,7 @@ class Runner:
             return
         before = self.desk.title(self._target())
         self._last_click = self._clock()
-        self._tab_events.append(self._last_click)
+        self._tab_events.setdefault(self._target(), []).append(self._last_click)
         self.desk.click(ctrl)
         self._mark()
         if ctrl:
@@ -591,11 +601,38 @@ class Runner:
         self.desk.click()
         self._mark()
 
-    def _do_close_window(self):
+    def _do_close_window(self, which="top"):
+        """which="oldest": zuerst zum ältesten eigenen Fenster wechseln, kurz draufschauen, dann schließen."""
+        d = self.desk
+        if which == "oldest" and len(self._stack) > 1:
+            h = self._stack.pop(0)
+            self._stack.append(h)
+            if d.is_window(h) and d.activate(h):
+                self._sleep(0.3)
+                self._wait(self._rng.uniform(0.5, 1.5))
         self._close_top()
+
+    def _all_tabs_own(self, h) -> bool:
+        tabs = self._tabs(h)
+        return tabs is not None and len(tabs) > 1 and all(t in self._own_tabs[h] for t, _ in tabs)
+
+    def _close_whole_window(self, h) -> bool:
+        """Ganzes eigenes Fenster auf einmal schließen (Strg+Umschalt+W) – nur wenn jeder Tab ein eigener ist."""
+        if not self._all_tabs_own(h):
+            return False
+        self.desk.send_combo(CLOSE_WINDOW_VKS)
+        self._mark()
+        end = self._clock() + CLOSE_WINDOW_WAIT_S
+        while self._clock() < end:
+            self._wait(0.15, focus=False)
+            if not self.desk.is_window(h) or not self.desk.is_visible(h):
+                return True
+        log.info("Strg+Umschalt+W ohne Wirkung – schließe eigene Tabs einzeln")
+        return False
 
     def _close_top(self) -> None:
         d, h = self.desk, self._stack[-1]
+        whole_tried = False
         for _ in range(CLOSE_TRIES):
             if not d.is_window(h) or not d.is_visible(h):
                 break
@@ -611,6 +648,10 @@ class Runner:
                 self._stack.pop()
                 self._wait(0.4, focus=False)
                 return
+            if not whole_tried:
+                whole_tried = True
+                if self._close_whole_window(h):
+                    break
             self._send("ctrl+w")
             self._wait(self._rng.uniform(0.3, 0.6), focus=False)
         else:

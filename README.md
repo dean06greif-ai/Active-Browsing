@@ -178,19 +178,31 @@ Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv)
    - **Anliegen mit rotem Faden**: z. B. „wetter leipzig“ → Ergebnis öffnen, lesen, zurück → zweites Ergebnis →
      „wetter leipzig 14 tage“ → „regenradar leipzig“ → neuer Tab für ein Nebenthema („hotel dresden“),
    - **typischer Ablauf**: Ergebnisliste überfliegen, Treffer anklicken (Maus fährt im Bogen hin, zögert kurz,
-     schießt manchmal minimal übers Ziel), lesen (Scroll-Schübe aus mehreren Raddrehungen, Lesepausen, mal ein
+     schießt manchmal minimal übers Ziel), lesen (**sanftes Scrollen**: Schwünge aus vielen kleinen Radschritten, die
+     anlaufen und abbremsen, oder langsames Weiterrollen beim Lesen; Lesepausen, mal ein
      Stück zurück, Maus wandert mit), oft zurück zur Liste; Treffer für später per Strg+Klick im Hintergrund-Tab
      öffnen und danach dorthin wechseln und lesen; ab und zu abgelenkt (Pause bis 45 s),
    - **Pausen log-normal** statt gleichmäßig: meist kurz, manchmal deutlich länger – wie echte Menschen,
    - **seltene Browserfunktionen** (Zoom, Verlauf, Vollbild, Menü, Quelltext …) höchstens 2 pro Durchlauf und
      jede nur einmal (zusammen unter 10 % aller Aktionen).
    1/3 bis volle `browse_actions_max` Aktionen je Durchlauf.
-   **Eigene Tabs aufräumen:** Jedes Testfenster bekommt ein zufälliges Tab-Limit von 3–6. Wird es erreicht oder
+   **Themen wie ein Mensch** (zufällig je Sitzung): *ein Thema* – die ganze Sitzung bleibt beim selben Thema
+   (immer neue Einstiege und Verfeinerungen); *Themenkette* (häufigste) – meist 4–8 aufeinander aufbauende Suchen
+   zu einem Anliegen, danach meist ein verwandtes Thema (z. B. Wandern → Camping → Wetter); *bunt* – 2–4 Suchen,
+   öfter Themenwechsel. Verfeinerungen bauen auf der letzten Anfrage auf („motorradhelm test“ → „… erfahrungen“ →
+   „… erfahrungen tipps“), wird die Anfrage zu lang, fängt man wieder beim Kern an; keine Anfrage doppelt.
+   **Eigene Tabs aufräumen:** Jedes Testfenster bekommt ein zufälliges Tab-Limit von 5–18 (meist um 9). Wird es erreicht oder
    überschritten, schließt der Test ab und zu alte Tabs wieder – jedes Mal etwas anders (ältesten Tab per Strg+1
    ansehen und schließen, den gerade gelesenen schließen oder erst ein, zwei Tabs weiterblättern; Strg+W oder
    Strg+F4; mal sofort, mal etwas später, mal erst Platz machen und dann einen neuen Tab öffnen), nie zweimal
    hintereinander auf dieselbe Art. Mehr als ein Tab über dem Limit wird es nie. Das gilt **nur für selbst
    geöffnete Tabs** im eigenen Testfenster – Ihre Fenster und Tabs bleiben unberührt.
+   **Eigene Fenster begrenzen** (wie beim Tab-Limit): Jeder Durchlauf bekommt ein zufälliges Fenster-Limit von 2–4
+   eigenen Fenstern (meist 2). Ist eins zu viel offen, schließt der Test ein **selbst geöffnetes** Fenster – meist
+   das älteste (kurz hinwechseln, draufschauen, zu), manchmal das aktuelle; nie zweimal hintereinander gleich.
+   Bestehen alle Tabs nachweislich aus eigenen Tabs (Tableiste lesbar), wird das Fenster auf einmal mit
+   Strg+Umschalt+W geschlossen, sonst Tab für Tab mit Strg+W; ein Fenster mit fremdem Tab bleibt offen.
+   **Ihre eigenen Fenster werden nie verändert oder geschlossen.**
    **Cookie-/Datenschutz-Hinweise** (`browse_accept_cookies`, Tray: „Cookie-/Datenschutz-Hinweise automatisch
    akzeptieren“): Nach jedem Seitenaufruf wartet der Test bis zu ca. 2 s, ob ein Hinweis erscheint (viele kommen
    verzögert), und sucht per UI Automation im Seiteninhalt des aktiven Tabs (auch in eingebetteten Rahmen und bei
@@ -221,9 +233,13 @@ Bei `signal: browse` startet nach jedem Abstand (Sie waren so lange nicht aktiv)
    lesen (oder ändern sich die Tab-IDs), zählt der Test wie bisher nur nach seinem eigenen Plan.
 4. **Aufräumen:** alle eigenen Fenster mit Strg+W schließen (geprüft über das Fensterhandle), Mauszeiger zurück.
 
-Suchanfragen: rund 30 Themen (Wetter, Rezepte, Fußball, Bahn, Urlaub, Technik, Finanzen, Gesundheit, Haushalt,
+Suchanfragen: rund 70 Themen (Wetter, Rezepte, Fußball, Bahn, Urlaub, Technik, Finanzen, Gesundheit, Haushalt,
 Garten, Wissensfragen, Freizeit, Job, Behörden, Auto, Tiere, Programmieren, Englisch, Rechnen/Umrechnen, Zahlen,
-Gaming, Sport, Musik, Filme/Serien, Fitness, Mode, Heimwerken, Familie, Nachrichten, Wissenschaft, Fernreisen)
+Gaming, Sport, Musik, Filme/Serien, Fitness, Mode, Heimwerken, Familie, Nachrichten, Wissenschaft, Fernreisen,
+Backen, Kaffee, Smartphone, Smart Home, PC bauen, KI, Social Media, Versicherung, Steuern, Wohnen/Miete, Immobilien,
+Umzug, Energie, Fahrrad, Camping, Wandern, Angeln, Fotografie, Bücher, Geschichte, Sprachen, Schule, Studium,
+Hochzeit, Geschenke, Einkaufen/Angebote, Restaurants, Ernährung, Psychologie, Beauty, Zimmerpflanzen, Basteln,
+Motorrad, Recht, Rente, Brettspiele, Nachhaltigkeit, Krypto) – jedes mit verwandten Themen für Themenketten –
 mit Startanfrage, Verfeinerungen und verwandten Fragen, Städten, Vereinen und Jahren. Zahlen so, wie Menschen sie
 tippen (`17 * 23`, `83 km in meilen`, `19 prozent von 250`, Postleitzahlen, Jahreszahlen). Etwa jede achte Anfrage
 hat einen absichtlichen, nicht korrigierten Tippfehler (testet die Rechtschreibkorrektur). **Tipprhythmus**:
@@ -240,11 +256,12 @@ Rücktasten korrigiert. Getippt wird per Unicode, unabhängig vom Tastaturlayout
 | `suche_abbrechen` | Adresszeile, halbe Anfrage tippen, Esc |
 | `www_com` | Strg+L, bekannter Name (wikipedia, github …), Strg+Enter |
 | `neuer_tab`, `tab_schliessen`, `tab_duplizieren` | Strg+T (meist mit neuer Suche), Strg+W / Strg+F4 (nie den letzten Tab), Strg+Shift+K |
-| `alte_tabs_schliessen` | alte eigene Tabs schließen, sobald das Tab-Limit (3–6) erreicht ist: Strg+1 / Lieblings-Tab-Taste, dann Strg+W / Strg+F4 |
+| `alte_tabs_schliessen` | alte eigene Tabs schließen, sobald das Tab-Limit (5–18) erreicht ist: Strg+1 / Lieblings-Tab-Taste, dann Strg+W / Strg+F4 |
 | `tab_wechseln` | Lieblingstaste (Strg+Tab, Strg+Bild↓ …), Strg+1–8; vorgemerkte Treffer werden gelesen |
-| `neues_fenster`, `fenster_schliessen` | Strg+N, schließen per Strg+W (max. 2 eigene Fenster) |
+| `neues_fenster`, `fenster_schliessen` | Strg+N, aktuelles eigenes Fenster schließen (Fenster-Limit 2–4 eigene Fenster) |
+| `alte_fenster_schliessen` | ein selbst geöffnetes Fenster schließen, sobald das Fenster-Limit erreicht/überschritten ist (meist das älteste) |
 | `zurueck_vor`, `startseite`, `neu_laden` | Alt+←/→, Alt+Home, F5 / Strg+R / Shift+F5 (manchmal sofort Esc) |
-| `lesen_scrollen`, `tastatur_scrollen` | Scroll-Schübe mit Lesepausen; Strg+F6, Leertaste, Pfeile, Bild↓/↑, Home, Ende |
+| `lesen_scrollen`, `tastatur_scrollen` | sanfte Scroll-Schwünge / langsames Weiterrollen mit Lesepausen; Strg+F6, Leertaste, Pfeile, Bild↓/↑, Home, Ende |
 | `klicken` | auf einer Seite einem Link folgen |
 | `auf_seite_suchen` | Strg+F, Wort aus der Suche tippen, Enter / Strg+G / F3, Esc |
 | `zoom`, `vollbild`, `reader`, `caret_browsing` | selten: Strg+Plus (danach immer Strg+0); F11 hin und zurück; F9 hin und zurück; F7 + Esc |
@@ -256,7 +273,7 @@ Rücktasten korrigiert. Getippt wird per Unicode, unabhängig vom Tastaturlayout
 | `pdf` | selten: Strg+\, Strg+[, Strg+] (wirkt nur in PDFs) |
 | `pause` | abgelenkt: meist ein paar Sekunden, manchmal bis 45 s |
 
-**Nie verwendet** (fest gesperrt): Alt+F4, Strg+Shift+W, Strg+Shift+Entf, Strg+P, Strg+Shift+P, Strg+S, Strg+O,
+**Nie verwendet** (fest gesperrt): Alt+F4, Strg+Shift+W (Ausnahme: nur beim Schließen eines eigenen Fensters, dessen Tabs alle nachweislich eigene sind), Strg+Shift+Entf, Strg+P, Strg+Shift+P, Strg+S, Strg+O,
 F12, Strg+Shift+I, Alt+Shift+I, Strg+D, Strg+Shift+D, Strg+Shift+V, Strg+Shift+L (Zwischenablage),
 **Strg+Shift+N** (Inkognito/InPrivate), **Strg+Shift+T** (würde browserweit den zuletzt geschlossenen Tab
 wiederherstellen – evtl. einen von Ihnen) und **Strg+Shift+A** (Tab-Suche springt auch in fremde Fenster).
