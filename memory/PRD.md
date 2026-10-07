@@ -62,7 +62,7 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - Sanftes Scrollen: Step ("scroll", deltas, gaps) – Schwung mit sin-Profil in 5–28 Kleinschritten (<120) bzw. langsames Weiterrollen
 - Themen-Stil je Sitzung: ein_thema / kette (4–8 Suchen, 65 % verwandtes Thema) / bunt; Interest mit budget, used (keine Doppelten), root/anchor (aufbauend), again(); queries.RELATED + related_theme; GENERIC_REFINES
 - 69 Themen (+38), 17 Personas (+4: Outdoor-Fan, Bücherwurm, Eigenheim-Planer, Nachhaltig-Lebende)
-- 233 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
+- 251 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
 
 ## Backlog
 - P0 --selftest auf echtem Windows: „Zähler im Popup (Power Coins, genau): 487“ prüfen

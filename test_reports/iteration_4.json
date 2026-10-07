@@ -1,0 +1,43 @@
+{
+  "summary": "v1.11.0 Backend-Review (pure Python Windows-Tray-Tool): Alle 233 bestehenden Tests laufen durch (10.5 s). Code-Review von browse.py, browse_runner.py und queries.py gegen die Anforderungen – saubere, defensive Umsetzung. Zusätzlich 18 adversariale Tests in tests/test_v111_adversarial.py geschrieben, alle grün (251/251 gesamt).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_v111_adversarial.py",
+    "/app/tests/test_v111.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "browse.TAB_LIMIT=(5,18), WINDOW_LIMIT=(2,4), MAX_WINDOWS=5, Mode 9/2 – alles wie gefordert; limit() nutzt triangular(lo,hi,mode) → natürlich verteilt (Test test_tab_and_window_limits_are_random_but_natural belegt Verteilung).",
+    "browse._tidy_windows: schließt nur selbst geöffnete Fenster, pop(0) für ältestes bzw. pop() für aktuelles; letzte eigene Fenster bleibt immer offen (n = min(len-1, excess)). Nutzerfenster liegt gar nicht in m.wins → nie betroffen.",
+    "browse.ACTIONS['alte_fenster_schliessen']: Gewicht 0 wenn len(wins)<2; stark erhöht wenn >win_limit – Modell überschreitet MAX_WINDOWS=5 in 400 Seeds nie (Test test_plan_opened_equals_closed_windows_across_many_seeds).",
+    "browse_runner._do_close_window('oldest'): rotiert Stack-Head nach hinten, aktiviert, dwell, dann _close_top – natürlich wirkend und race-sicher via d.is_window-Check.",
+    "browse_runner._close_whole_window: Strg+Umschalt+W nur wenn _all_tabs_own(h) (Tableiste lesbar, len>1, alle Tabs in _own_tabs). Fallback Ctrl+W-Loop bei Nichtwirkung nach 2 s. Test test_runner_close_oldest_when_oldest_has_foreign_tab_keeps_it_open bestätigt: Fenster mit fremdem Tab bleibt offen, kein Strg+Umschalt+W.",
+    "browse_runner._tab_events ist jetzt dict[Fenster] → der frühere Bug 'eigener Tab wird nach Fensterwechsel fremd' ist behoben: Test test_tab_events_are_isolated_per_window prüft explizit, dass ein pending Event in Fenster A nicht einen neuen Tab in Fenster B als eigen zählt.",
+    "browse.scroll + _flick (sinus mit sharp-Exponent) + _creep (3-8 Pakete mit Lesepausen): neue Steps ('scroll', deltas, gaps). Invarianten: Deltas gleiche Richtung, |d|<120, len(deltas)==len(gaps)>=3 (Tests test_scrolling_is_smooth, test_scroll_sequence_monotonic_direction_and_bounded_deltas).",
+    "browse_runner._do_scroll ruft _check_input() vor jedem Rad-Tick – Nutzer kann mitten im Scroll abbrechen (Test test_scroll_aborts_mid_delta_when_cancel_triggers belegt frühzeitigen Abort).",
+    "queries.THEMES hat 69 Einträge (gefordert: deutlich erweitert, >60), RELATED-Map ist komplett (set(RELATED)==set(THEMES)) und zyklenfrei pro Thema (r!=t). TOPIC_MODES ein_thema/kette/bunt mit Gewichten 3/5/2 und Budgets (40,40)/(4,8)/(2,4) wie spezifiziert.",
+    "queries.Interest(budget, used, root, anchor): again() baut auf Thema, next() verfeinert (65%) oder springt zu verwandter Frage (35%); _fresh() mit 6-10 Versuchen minimiert Doppler. Test test_interest_next_does_not_repeat_queries_over_long_sequence bestätigt <=2 Wiederholungen in 16-er Sequenz.",
+    "browse._next_interest / _search mit TOPIC_MODES: ein_thema bleibt genau in einem Thema (Test test_one_topic_session_stays_in_one_theme), kette bleibt 4-8 Suchen und wechselt dann meist zu RELATED (>55%), bunt wechselt oft.",
+    "browse.BLOCKED enthält 'ctrl+shift+w' – wird nie als Plan-Keystroke generiert (Test test_ctrl_shift_w_never_in_plans, test_no_blocked_window_close_shortcut_in_any_plan über 350 Seeds).",
+    "Minor (kein Bug): browse_runner.CLOSE_TRIES=MAX_TABS+12=31; bei MAX_TABS=19 bleibt genug Spielraum für den Ctrl+W-Fallback nach gescheitertem Strg+Umschalt+W.",
+    "Minor (kein Bug): browse._tidy_windows wählt mit 40% Wahrscheinlichkeit erzwungen 'aeltestes' (statt WINDOW_TIDY_WAYS\\{last}) – gewünschte Verzerrung Richtung 'ältestes schließen'."
+  ],
+  "updated_files": [
+    "/app/tests/test_v111_adversarial.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pure Python Windows-Tray-Tool, kein Server/Frontend. Alle Browser-/Fenster-APIs werden über tests/test_browse.py:FakeDesk bzw. tests/test_v111.py:TabDesk gemockt. TabDesk ergänzt FakeDesk um tabs()-IDs und Strg+Umschalt+W-Fenstersch\u00fluss. Neue adversariale Tests in tests/test_v111_adversarial.py decken: _tidy_windows pop-oldest, opened==closed-Invariante, oldest-window-close bei fremdem Tab, Strg+Umschalt+W nie an USER-Fenster, nie bei unlesbarer Tableiste, _tab_events pro Fenster isoliert, _do_scroll Abort-mid-flight, scroll-Richtung/Beträge, topic-Modi (ein_thema vs. bunt), Interest.next-ohne-Doppler, related_theme Fallback. Für zukünftige Features: Desk aus test_browse wiederverwenden."
+}
