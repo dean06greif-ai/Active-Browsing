@@ -1,0 +1,25 @@
+{
+  "summary": "v1.9.0 Power-Coins-Zähler-Konfiguration (off/session/random) backend-only review + Tests. Full pytest-Lauf bestanden: 178 bestehende Tests, +18 neue adversariale Tests in tests/test_v19_adversarial.py → 196 passed. Zusätzlich Tray-Submenü via PYSTRAY_BACKEND=dummy smoke-getestet: alle 7 Einträge (Aus / Nach jeder Sitzung / 3× zufällig 10|25|50 % / Separator / 'Genaue Zahl im Popup lesen') werden korrekt gebaut. Keine Bugs gefunden.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/tests/test_v19.py", "/app/tests/test_v19_adversarial.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "config.validate: `bm = raw.get('badge_mode', 'off' if raw.get('badge_read') is False else d.badge_mode)` migriert alten `badge_read=false` lautlos auf 'off' und ignoriert alten `badge_read=true` (bleibt beim Default 'session'). 'badge_read' steht in der Ausnahmeliste für 'Unbekannte Schlüssel'. Sauber, keine Warnung – wie spezifiziert.",
+    "history.CoinHistory.want: 'off' und 'session' konsumieren den RNG nicht (verifiziert via rng.getstate()). 'random' verwendet self._rng.random()*100 < percent → bei 100 % immer True, bei 1 % ~1 %. Korrekt.",
+    "history.CoinHistory.session_done: ignoriert Status 'aborted'/'skipped' (keine Zählung, kein Record). Nur bei 'done'+badge_read wird self.sessions zurückgesetzt. Logik ist korrekt.",
+    "history.CoinHistory.record(None): schreibt Zeile mit Zeitstempel + 'nicht lesbar', aktualisiert aber NICHT self.last / self.last_time → nachfolgende Messungen behalten den letzten echten Wert als Referenz. Exakt wie gefordert.",
+    "CSV-Migration (_migrate): idempotent, Header-only-Dateien funktionieren, alte 3-Spalten-Rows werden mit leeren Spalten aufgefüllt. 'nicht lesbare' Rows (leerer Wert) überleben die Migration. Robust.",
+    "browse_runner.Runner.run: _badge_after_session wird einmal NACH allen Plan-Steps aufgerufen, mit Pause uniform(0.8, 3.0) s. Bei cancel() oder _user_active() wird NICHT gelesen (returns (False, None)). Reihenfolge spy-getestet: badge-Event kommt nach allen step-Events.",
+    "win32.Win32Api.browse: korrekt verdrahtet – coins.want(cfg) bestimmt, ob gelesen wird; coins.last als badge_prev; coins.session_done(result, cfg) nach jeder Sitzung. Fallback (coins is None) nutzt cfg.badge_mode != 'off'. Sauber.",
+    "tray._badge_menu: 5 Radios + Separator + Checkbox, exakt wie spezifiziert; disabled 'Eigener Wert: … (config.json)' erscheint nur bei nicht-Standard-Prozent. Smoke-Test mit PYSTRAY_BACKEND=dummy erfolgreich.",
+    "Nit (nicht blockierend): tray_labels.badge_mode_label('random', None) würde 'ca. None %' erzeugen, kommt in der Praxis aber nie vor, weil UI immer einen Prozentwert mitgibt."
+  ],
+  "updated_files": ["/app/tests/test_v19_adversarial.py"],
+  "success_rate": {"backend": "100% (196/196)", "frontend": "N/A (nur Backend)"},
+  "test_credentials": "n/a",
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pure-python pytest Windows-Tray-App unter /app/awaketoggle. Volle Suite: `cd /app && python -m pytest tests -q` → 196 passed in ~7 s. v1.9-Tests: tests/test_v19.py (14 Haupttests) + tests/test_v19_adversarial.py (18 adversariale). FakeDesk aus tests/test_browse.py simuliert Windows. Tray-Bau funktioniert unter Linux mit PYSTRAY_BACKEND=dummy + APPDATA/LOCALAPPDATA env vars."
+}
