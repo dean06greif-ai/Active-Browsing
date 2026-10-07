@@ -1,0 +1,35 @@
+{
+  "summary": "v1.10.0 Power-Coins-Zähler Backend-Review (pure Python, Windows-Teile simuliert): Alle 205 bestehenden Tests laufen durch. Code-Review von badge.py / badge_win.py gegen das Nutzer-Szenario (Popup zählt von 0 auf 1,341 hoch; Nutzer-CSV war 0 oder 'nicht lesbar') zeigt eine saubere, defensive Implementierung. Zusätzlich 17 adversariale Tests in tests/test_v110_adversarial.py geschrieben – alle grün (222/222 gesamt).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_v110_adversarial.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "badge_win._settled: korrekte Semantik – wartet auf POPUP_STABLE_READS (4) gleicher Lesungen >0, gibt bei Timeout den zuletzt gelesenen Wert zurück (auch 0). Löst das reale Problem, dass das Popup zuerst 0 anzeigt und dann hochzählt.",
+    "badge_win.read_popup: Fallback-Kette ist vollständig – UIA-Popup -> UIA-Text (_settled) -> OCR bei 0/None (_better) -> OCR auf Bereich unter dem Badge, falls kein Popup-Fenster entsteht. Exceptions aus popup_texts und _ocr werden geschluckt und sauber geloggt.",
+    "badge_win._rank: 'guard'/'shield'/'extensionstoolbar' werden vor allen anderen Checks ausgeschlossen – damit zählt die Zahl im Schutzschild-Badge nicht fälschlich als Power Coins. Class-Treffer (points/coin) rangiert vor Name/Tooltip 'Power Coins', was in Tests belegt ist.",
+    "badge.parse_popup: verlangt strikt den Titel 'power coins' (case-insensitiv) – fremde Popups mit nackter '0' werden zuverlässig ausgeschlossen. Narrow-NBSP (U+202F) und NBSP (U+00A0) als Tausendertrenner werden korrekt geparst.",
+    "badge_win._popup_windows: filtert korrekt nach is_visible, Prozessname und Mindestgröße – 'before' speichert nur sichtbare Fenster, damit ein versteckt wiederverwendetes Popup nach dem Klick erkannt wird (Test test_hidden_reused_popup_window_is_found belegt das).",
+    "read_badge probiert bis zu POPUP_TRIES=2 Buttons – Edge-Case 'erster Button hat kein Power-Coins-Popup' ist abgedeckt.",
+    "Minor (kein Bug): _ocr sendet immer an einen festen tempfile-Pfad; bei parallelen Reads könnte das kollidieren – auf Windows-Tray-Tool mit Einzellesung aber unkritisch.",
+    "Minor: _settled nutzt POPUP_STABLE_S=0.25 als sleep zwischen Reads, aber POPUP_POLL_S=0.15 in _wait – konsistent dokumentiert, kein Bug."
+  ],
+  "updated_files": [
+    "/app/tests/test_v110_adversarial.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "n/a"},
+  "seed_data_creation": "keine",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reines Python-Desktop-Tool, keine Server/Frontend. Windows-APIs werden in den Tests über tests/test_v18.py:Desk gemockt. Neue adversariale Tests liegen in tests/test_v110_adversarial.py und decken: never-settling popup, UIA/OCR Exceptions, _better-Logik, _rank Guard-Ausschluss, parse_popup Titel-Strictness + NBSP, _popup_windows Filter, Esc-Fallback via zweitem Klick, read_badge ohne Kandidaten. Falls neue Features zum Zähler kommen, Desk aus test_v18 wiederverwenden."
+}

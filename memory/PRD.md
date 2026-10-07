@@ -53,7 +53,7 @@ User-Wunsch: immer komplette Dateien liefern (keine Patches); ZIP + Save to GitH
 - badge.parse_popup streng: nur Zahl nach Titel „Power Coins“ (kein fremdes Popup „0“)
 - _rank: Klasse points/coin > Name/Tooltip „Power Coins“ > Klassen-Hinweise; guard/shield ausgeschlossen; read_badge probiert max. 2 Buttons
 - Popup-Erkennung: auch vorher unsichtbare (wiederverwendete) Fenster; ohne Popup-Fenster OCR im Bereich unter dem Badge
-- 205 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
+- 222 pytest-Tests grün; ZIP: /app/AwakeToggle_komplett.zip
 
 ## Backlog
 - P0 --selftest auf echtem Windows: „Zähler im Popup (Power Coins, genau): 487“ prüfen
